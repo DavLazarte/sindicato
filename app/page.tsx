@@ -23,7 +23,7 @@ const SOCIOS_INICIAL = [
 
 // ─── HELPERS ────────────────────────────────────────────────────
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("es-AR");
-const totalSocio = (s: any): number => Object.values(s.saldos).reduce((a: any, b: any) => a + b, 0);
+const totalSocio = (s: any): number => (Object.values(s.saldos) as number[]).reduce((a: number, b: number) => a + b, 0);
 const now = () => { const d = new Date(); return d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0"); };
 
 // ─── COMPONENTES PEQUEÑOS ───────────────────────────────────────
