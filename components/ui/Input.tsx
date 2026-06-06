@@ -35,8 +35,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500',
               'transition-all duration-200',
               'disabled:bg-slate-50 disabled:text-slate-500',
-              icon && 'pl-10',
-              error && 'border-red-400 focus:ring-red-500 focus:border-red-500',
+              icon ? 'pl-10' : '',
+              error ? 'border-red-400 focus:ring-red-500 focus:border-red-500' : '',
               className
             )}
             {...props}
