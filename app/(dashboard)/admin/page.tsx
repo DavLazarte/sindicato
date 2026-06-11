@@ -52,16 +52,52 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div>
-          <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Accesos rápidos</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {QUICK_ACTIONS.map((a) => (
-              <Link key={a.href} href={a.href} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group">
-                <div className={`w-12 h-12 rounded-2xl ${a.color} flex items-center justify-center text-2xl mb-3 group-hover:scale-110 transition-transform`}>{a.icon}</div>
-                <p className="text-sm font-bold text-slate-800">{a.label}</p>
-              </Link>
-            ))}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
+          {/* Quick Actions */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+            <h2 className="text-base font-bold text-slate-800 mb-4">Accesos rápidos</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {QUICK_ACTIONS.map((a) => (
+                <Link key={a.href} href={a.href} className="bg-slate-50 rounded-2xl border border-slate-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all group">
+                  <div className={`w-10 h-10 rounded-xl ${a.color} flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform`}>{a.icon}</div>
+                  <p className="text-sm font-bold text-slate-800">{a.label}</p>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Últimas Acreditaciones */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col max-h-[400px]">
+            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800">Últimas acreditaciones</h3>
+              <Link href="/admin/acreditaciones" className="text-xs font-bold text-emerald-600 hover:text-emerald-700">Ver todas →</Link>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {(!data?.ultimas_acreditaciones || data.ultimas_acreditaciones.length === 0) ? (
+                <div className="p-12 text-center"><p className="text-slate-400 text-sm">No hay acreditaciones recientes</p></div>
+              ) : (
+                <div className="divide-y divide-slate-50">
+                  {data.ultimas_acreditaciones.map((a) => (
+                    <div key={a.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg shrink-0">💰</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-800 truncate">
+                          {a.socio ? `${a.socio.nombre} ${a.socio.apellido}` : 'Acreditación'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {new Date(a.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-black text-emerald-600">+{formatMoney(a.monto)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

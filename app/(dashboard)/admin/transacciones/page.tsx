@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { TopBar } from '@/components/layout/Navigation';
-import type { ApiResponse, PaginatedData, Transaccion } from '@/lib/types';
+import type { ApiResponse, PaginatedData, Transaccion, Periodo } from '@/lib/types';
+import * as XLSX from 'xlsx-js-style';
 
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 function formatDate(date: string) { return new Date(date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
@@ -14,7 +15,23 @@ export default function AdminTransacciones() {
   const [lastPage, setLastPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [periodoId, setPeriodoId] = useState('');
+  const [prestadorId, setPrestadorId] = useState('');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [estado, setEstado] = useState('');
+  const [periodos, setPeriodos] = useState<Periodo[]>([]);
+  const [prestadores, setPrestadores] = useState<{id: number, nombre: string}[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [expandedTransaccion, setExpandedTransaccion] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.get<ApiResponse<Periodo[]>>('/admin/periodos').then(res => setPeriodos(res.data || []));
+    api.get<ApiResponse<any>>('/admin/prestadores?unpaginated=1').then(res => {
+      const data = Array.isArray(res.data) ? res.data : res.data.data || [];
+      setPrestadores(data);
+    });
+  }, []);
 
   const toggleExpanded = (id: number) => {
     setExpandedTransaccion(expandedTransaccion === id ? null : id);
@@ -22,17 +39,26 @@ export default function AdminTransacciones() {
 
   const fetchData = useCallback((p: number) => {
     setLoading(true);
-    api.get<ApiResponse<PaginatedData<Transaccion>>>(`/admin/transacciones?page=${p}${search ? `&search=${search}` : ''}`)
+    const params = new URLSearchParams();
+    params.append('page', p.toString());
+    if (search) params.append('search', search);
+    if (periodoId) params.append('periodo_id', periodoId);
+    if (prestadorId) params.append('prestador_id', prestadorId);
+    if (fechaDesde) params.append('fecha_desde', fechaDesde);
+    if (fechaHasta) params.append('fecha_hasta', fechaHasta);
+    if (estado) params.append('estado', estado);
+
+    api.get<ApiResponse<PaginatedData<Transaccion>>>(`/admin/transacciones?${params.toString()}`)
       .then((res) => { setTransacciones(res.data.data); setPage(res.data.current_page); setLastPage(res.data.last_page); })
       .finally(() => setLoading(false));
-  }, [search]);
+  }, [search, periodoId, prestadorId, fechaDesde, fechaHasta, estado]);
 
   useEffect(() => { 
     const timer = setTimeout(() => {
       fetchData(1);
     }, 400);
     return () => clearTimeout(timer);
-  }, [search, fetchData]);
+  }, [search, periodoId, prestadorId, fechaDesde, fechaHasta, estado, fetchData]);
 
   const handleAnular = async (id: number) => {
     if (!confirm('¿Estás seguro de anular esta transacción? Se devolverá el saldo al socio.')) return;
@@ -45,23 +71,185 @@ export default function AdminTransacciones() {
     }
   };
 
+  const handleExportar = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('unpaginated', '1');
+      if (search) params.append('search', search);
+      if (periodoId) params.append('periodo_id', periodoId);
+      if (prestadorId) params.append('prestador_id', prestadorId);
+      if (fechaDesde) params.append('fecha_desde', fechaDesde);
+      if (fechaHasta) params.append('fecha_hasta', fechaHasta);
+      if (estado) params.append('estado', estado);
+
+      const res = await api.get<ApiResponse<any>>(`/admin/transacciones?${params.toString()}`);
+      const data: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
+      
+      const rows = data.map(t => ({
+        Fecha: new Date(t.created_at).toLocaleString('es-AR'),
+        Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
+        Legajo: t.socio?.legajo,
+        Negocio: t.prestador?.nombre,
+        "Total Venta": t.monto_total,
+        "Monto Cobrado": t.monto_cobrado,
+        Cuotas: t.es_cuotas ? 'Sí' : 'No',
+        Estado: t.estado,
+      }));
+
+      const totalVenta = data.reduce((acc, t) => t.estado === 'confirmada' ? acc + Number(t.monto_total) : acc, 0);
+      const totalCobrado = data.reduce((acc, t) => t.estado === 'confirmada' ? acc + Number(t.monto_cobrado) : acc, 0);
+      
+      rows.push({
+        Fecha: '', Socio: '', Legajo: '', Negocio: '', "Total Venta": totalVenta, "Monto Cobrado": totalCobrado, Cuotas: 'TOTAL CONFIRMADAS', Estado: ''
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      
+      // Aplicar estilos con xlsx-js-style
+      const range = XLSX.utils.decode_range(ws['!ref'] || "A1:G1");
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = { c: C, r: R };
+          const cellRef = XLSX.utils.encode_cell(cellAddress);
+          if (!ws[cellRef]) continue;
+          
+          ws[cellRef].s = {
+            font: { name: "Arial", sz: 10 },
+            alignment: { vertical: "center" }
+          };
+
+          // Formato Encabezados
+          if (R === 0) {
+            ws[cellRef].s.font.bold = true;
+            ws[cellRef].s.font.color = { rgb: "FFFFFF" };
+            ws[cellRef].s.fill = { fgColor: { rgb: "475569" } }; // slate-600
+            ws[cellRef].s.alignment = { horizontal: "center", vertical: "center" };
+          }
+          
+          // Formato Fila Total
+          if (R === range.e.r) {
+            ws[cellRef].s.font.bold = true;
+            ws[cellRef].s.fill = { fgColor: { rgb: "D1FAE5" } }; // emerald-100
+            if (C === 4 || C === 5) {
+              ws[cellRef].s.font.color = { rgb: "065F46" }; // emerald-800
+            }
+          }
+        }
+      }
+
+      // Ancho de columnas
+      ws['!cols'] = [
+        { wch: 18 }, // Fecha
+        { wch: 30 }, // Socio
+        { wch: 10 }, // Legajo
+        { wch: 30 }, // Negocio
+        { wch: 15 }, // Total Venta
+        { wch: 15 }, // Monto Cobrado
+        { wch: 20 }, // Cuotas / Texto TOTAL
+        { wch: 15 }, // Estado
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Ventas");
+      XLSX.writeFile(wb, "Reporte_Ventas.xlsx");
+
+    } catch (err) {
+      alert("Error al exportar los datos.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <>
       <TopBar title="Ventas globales" subtitle="Transacciones" />
       <div className="p-4 md:p-6">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <h2 className="text-lg font-black text-slate-800">Historial de Ventas</h2>
-            <div className="w-full sm:w-96 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+          <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+            <h2 className="text-lg font-black text-slate-800">Filtros y Exportación</h2>
+            <button 
+              onClick={handleExportar}
+              disabled={exporting}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
+            >
+              {exporting ? 'Generando Excel...' : '📊 Exportar a Excel'}
+            </button>
+          </div>
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Buscar (Socio/Negocio)</label>
               <input 
                 type="text" 
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
-                placeholder="Buscar por socio, legajo o negocio..." 
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all" 
+                placeholder="Nombre, legajo..." 
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none" 
               />
             </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Negocio (Prestador)</label>
+              <select 
+                value={prestadorId} 
+                onChange={(e) => setPrestadorId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none"
+              >
+                <option value="">Todos los negocios</option>
+                {prestadores.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Mes / Período</label>
+              <select 
+                value={periodoId} 
+                onChange={(e) => setPeriodoId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none"
+              >
+                <option value="">Todos los meses</option>
+                {periodos.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Desde Fecha</label>
+              <input 
+                type="date" 
+                value={fechaDesde} 
+                onChange={(e) => setFechaDesde(e.target.value)} 
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Hasta Fecha</label>
+              <input 
+                type="date" 
+                value={fechaHasta} 
+                onChange={(e) => setFechaHasta(e.target.value)} 
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">Estado</label>
+              <select 
+                value={estado} 
+                onChange={(e) => setEstado(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none"
+              >
+                <option value="">Todos los estados</option>
+                <option value="confirmada">Confirmada</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="anulada">Anulada</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <h2 className="text-lg font-black text-slate-800">Historial de Ventas</h2>
           </div>
           
           {/* Table / List */}
@@ -78,7 +266,7 @@ export default function AdminTransacciones() {
                     <th className="text-left px-4 py-3 font-bold text-slate-500 text-xs uppercase">Fecha</th>
                     <th className="text-left px-4 py-3 font-bold text-slate-500 text-xs uppercase">Socio</th>
                     <th className="text-left px-4 py-3 font-bold text-slate-500 text-xs uppercase">Negocio</th>
-                    <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Monto</th>
+                    <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Cobrado</th>
                     <th className="text-center px-4 py-3 font-bold text-slate-500 text-xs uppercase">Estado</th>
                     <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Acciones</th>
                   </tr></thead>
@@ -89,12 +277,15 @@ export default function AdminTransacciones() {
                           <td className="px-4 py-3 text-slate-500 text-xs">{formatDate(t.created_at)}</td>
                           <td className="px-4 py-3 font-semibold text-slate-800">{t.socio?.nombre} {t.socio?.apellido} <span className="text-xs text-slate-400 font-mono ml-1">({t.socio?.legajo})</span></td>
                           <td className="px-4 py-3 font-medium text-slate-700">{t.prestador?.nombre}</td>
-                          <td className={`px-4 py-3 text-right font-bold ${t.estado === 'anulada' ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                            {formatMoney(t.monto_total)}
+                          <td className={`px-4 py-3 text-right font-bold ${t.estado === 'anulada' ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>
+                            {formatMoney(t.monto_cobrado)}
                             {t.es_cuotas && (
-                              <button onClick={() => toggleExpanded(t.id)} className="block ml-auto mt-1 text-[10px] text-blue-500 hover:text-blue-700 font-bold underline cursor-pointer focus:outline-none">
-                                {expandedTransaccion === t.id ? 'Ocultar cuotas' : 'Ver cuotas'}
-                              </button>
+                              <>
+                                <span className="block text-[10px] text-slate-500 font-medium">de {formatMoney(t.monto_total)}</span>
+                                <button onClick={() => toggleExpanded(t.id)} className="block ml-auto mt-1 text-[10px] text-blue-500 hover:text-blue-700 font-bold underline cursor-pointer focus:outline-none">
+                                  {expandedTransaccion === t.id ? 'Ocultar cuotas' : 'Ver cuotas'}
+                                </button>
+                              </>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -142,7 +333,12 @@ export default function AdminTransacciones() {
                         <p className="text-xs text-slate-500">{t.prestador?.nombre}</p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-sm font-black ${t.estado === 'anulada' ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{formatMoney(t.monto_total)}</p>
+                        <p className={`text-sm font-black ${t.estado === 'anulada' ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>
+                          {formatMoney(t.monto_cobrado)}
+                        </p>
+                        {t.es_cuotas && (
+                          <p className="text-[10px] text-slate-500 font-medium mb-1">Total: {formatMoney(t.monto_total)}</p>
+                        )}
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.estado === 'confirmada' ? 'bg-emerald-50 text-emerald-600' : t.estado === 'anulada' ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-600'}`}>{t.estado}</span>
                       </div>
                     </div>

@@ -56,17 +56,14 @@ export default function PrestadorHistorial() {
             <div className="divide-y divide-slate-50">
               {transacciones.map((t) => {
                 const isAnulada = t.estado === 'anulada';
-                let displayAmount = formatMoney(t.monto_total);
+                let displayAmount = formatMoney(t.monto_cobrado);
                 let subtext = null;
 
-                if (t.es_cuotas && t.cuotas && t.cuotas.length > 0) {
-                  const cobradas = t.cuotas.filter(c => c.estado === 'cobrada');
-                  const montoCobrado = cobradas.reduce((acc, c) => acc + c.monto, 0);
-                  if (montoCobrado > 0) {
-                    displayAmount = '+' + formatMoney(montoCobrado);
-                    subtext = `Venta total: ${formatMoney(t.monto_total)}`;
-                  }
-                } else if (!isAnulada) {
+                if (t.es_cuotas) {
+                  subtext = `Venta total: ${formatMoney(t.monto_total)}`;
+                }
+                
+                if (!isAnulada) {
                   displayAmount = '+' + displayAmount;
                 }
 

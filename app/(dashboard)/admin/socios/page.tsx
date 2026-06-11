@@ -17,7 +17,7 @@ export default function AdminSocios() {
   const [editingSocio, setEditingSocio] = useState<Socio | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ nombre: '', apellido: '', legajo: '', celular: '', password: '', saldo_disponible: '0' });
+  const [form, setForm] = useState({ nombre: '', apellido: '', legajo: '', celular: '', password: '', saldo_disponible: '0', deposito_automatico: true, estado: 'activo' });
 
   const fetchData = useCallback((p: number) => {
     setLoading(true);
@@ -33,15 +33,21 @@ export default function AdminSocios() {
     return () => clearTimeout(timer);
   }, [search, fetchData]);
 
-  const openCreate = () => {
+  const openCreate = async () => {
     setEditingSocio(null);
-    setForm({ nombre: '', apellido: '', legajo: '', celular: '', password: '', saldo_disponible: '0' });
+    setForm({ nombre: '', apellido: '', legajo: '...', celular: '', password: '', saldo_disponible: '0', deposito_automatico: true, estado: 'activo' });
     setShowModal(true);
+    try {
+      const res = await api.get<{data: {next: string}}>('/admin/socios/next-legajo');
+      setForm(prev => ({ ...prev, legajo: res.data.next, password: res.data.next }));
+    } catch (e) {
+      setForm(prev => ({ ...prev, legajo: '', password: '' }));
+    }
   };
 
   const openEdit = (s: Socio) => {
     setEditingSocio(s);
-    setForm({ nombre: s.nombre, apellido: s.apellido, legajo: s.legajo, celular: s.celular || '', password: '', saldo_disponible: String(s.saldo_disponible) });
+    setForm({ nombre: s.nombre, apellido: s.apellido, legajo: s.legajo, celular: s.celular || '', password: '', saldo_disponible: String(s.saldo_disponible), deposito_automatico: s.deposito_automatico, estado: s.estado });
     setShowModal(true);
   };
 
@@ -49,7 +55,7 @@ export default function AdminSocios() {
     setSaving(true);
     try {
       if (editingSocio) {
-        const body: Record<string, unknown> = { nombre: form.nombre, apellido: form.apellido, legajo: form.legajo, celular: form.celular, saldo_disponible: parseFloat(form.saldo_disponible) || 0 };
+        const body: Record<string, unknown> = { nombre: form.nombre, apellido: form.apellido, legajo: form.legajo, celular: form.celular, saldo_disponible: parseFloat(form.saldo_disponible) || 0, deposito_automatico: form.deposito_automatico, estado: form.estado };
         await api.put(`/admin/socios/${editingSocio.id}`, body);
       } else {
         await api.post('/admin/socios', { ...form, saldo_disponible: parseFloat(form.saldo_disponible) || 0 });
@@ -94,6 +100,7 @@ export default function AdminSocios() {
                   <th className="text-left px-4 py-3 font-bold text-slate-500 text-xs uppercase">Legajo</th>
                   <th className="text-left px-4 py-3 font-bold text-slate-500 text-xs uppercase">Nombre</th>
                   <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Saldo</th>
+                  <th className="text-center px-4 py-3 font-bold text-slate-500 text-xs uppercase">Depósito</th>
                   <th className="text-center px-4 py-3 font-bold text-slate-500 text-xs uppercase">Estado</th>
                   <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Acciones</th>
                 </tr></thead>
@@ -103,6 +110,9 @@ export default function AdminSocios() {
                       <td className="px-4 py-3 font-mono font-bold text-slate-600">{s.legajo}</td>
                       <td className="px-4 py-3 font-semibold text-slate-800">{s.nombre} {s.apellido}</td>
                       <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatMoney(s.saldo_disponible)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.deposito_automatico ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{s.deposito_automatico ? 'Automático' : 'Revisión'}</span>
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${s.estado === 'activo' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span>
                       </td>
@@ -125,7 +135,10 @@ export default function AdminSocios() {
                       <p className="text-sm font-bold text-slate-800">{s.nombre} {s.apellido}</p>
                       <p className="text-xs text-slate-500 font-mono">{s.legajo}</p>
                     </div>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${s.estado === 'activo' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${s.estado === 'activo' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.deposito_automatico ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{s.deposito_automatico ? 'Automático' : 'Revisión'}</span>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-lg font-black text-emerald-600">{formatMoney(s.saldo_disponible)}</p>
@@ -171,8 +184,26 @@ export default function AdminSocios() {
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Contraseña</label>
                   <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
               )}
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Saldo inicial</label>
-                <input type="number" value={form.saldo_disponible} onChange={(e) => setForm({...form, saldo_disponible: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Saldo inicial</label>
+                  <input type="number" value={form.saldo_disponible} onChange={(e) => setForm({...form, saldo_disponible: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
+                {editingSocio && (
+                  <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
+                    <select value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all">
+                      <option value="activo">Activo</option>
+                      <option value="inactivo">Inactivo</option>
+                      <option value="suspendido">Suspendido</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 mt-2">
+                <input type="checkbox" id="deposito" checked={form.deposito_automatico} onChange={(e) => setForm({...form, deposito_automatico: e.target.checked})} className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                <label htmlFor="deposito" className="text-sm font-medium text-slate-700 leading-snug cursor-pointer">
+                  <span className="block font-bold">Depósito Automático</span>
+                  <span className="text-xs text-slate-500 font-normal">Si está activo, el socio recibe el depósito completo de forma masiva.</span>
+                </label>
+              </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>

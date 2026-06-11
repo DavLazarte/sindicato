@@ -20,9 +20,8 @@ export interface Socio {
   celular: string | null;
   estado: 'activo' | 'inactivo' | 'suspendido';
   saldo_disponible: number;
-  permite_negativo: boolean;
-  tope_negativo: number | null;
-  acumula_saldo: boolean;
+  deposito_automatico: boolean;
+  saldo_anterior: number;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +45,7 @@ export interface Transaccion {
   periodo_id: number;
   tipo: 'compra' | 'anulacion' | 'ajuste';
   monto_total: number;
+  monto_cobrado: number;
   estado: 'pendiente' | 'confirmada' | 'anulada';
   es_cuotas: boolean;
   anulada_por: number | null;
@@ -56,6 +56,17 @@ export interface Transaccion {
   prestador?: Prestador;
   periodo?: Periodo;
   cuotas?: Cuota[];
+}
+
+export interface Movimiento {
+  id: string;
+  tipo: 'compra' | 'acreditacion' | 'cuota' | 'prestamo' | 'cuota_prestamo';
+  titulo: string;
+  monto: number;
+  monto_cobrado?: number;
+  signo: '+' | '-';
+  estado: string;
+  fecha: string;
 }
 
 export interface Cuota {
@@ -88,6 +99,35 @@ export interface Periodo {
   mes: number;
   anio: number;
   estado: 'abierto' | 'cerrado';
+}
+
+export interface Prestamo {
+  id: number;
+  socio_id: number;
+  monto_total: number;
+  cantidad_cuotas: number;
+  monto_cuota: number;
+  cuotas_pagadas: number;
+  estado: 'vigente' | 'finalizado' | 'cancelado';
+  aprobado_por: number;
+  observaciones: string | null;
+  created_at: string;
+  updated_at: string;
+  socio?: Socio;
+  cuotas_prestamo?: CuotaPrestamo[];
+  aprobador?: User;
+}
+
+export interface CuotaPrestamo {
+  id: number;
+  prestamo_id: number;
+  nro_cuota: number;
+  monto: number;
+  estado: 'pendiente' | 'pagada' | 'anulada';
+  periodo_id: number | null;
+  pagada_en: string | null;
+  periodo?: Periodo;
+  prestamo?: Prestamo;
 }
 
 export interface AuditLog {
@@ -132,14 +172,18 @@ export interface DashboardSocio {
   apellido: string;
   legajo: string;
   estado: string;
-  transacciones: Transaccion[];
+  movimientos: Movimiento[];
   cuotas_pendientes?: Cuota[];
+  cuotas_pendientes?: Cuota[];
+  prestamos_vigentes?: Prestamo[];
 }
 
 export interface DashboardPrestador {
   total_cobrado: number;
   cantidad_transacciones: number;
   transacciones: Transaccion[];
+  cuotas_pendientes?: Cuota[];
+  cuotas_cobradas?: Cuota[];
 }
 
 export interface DashboardAdmin {
@@ -148,4 +192,6 @@ export interface DashboardAdmin {
   total_saldo_circulacion: number;
   transacciones_mes_cantidad: number;
   transacciones_mes_monto: number;
+  prestamos_vigentes: number;
+  ultimas_acreditaciones?: Acreditacion[];
 }

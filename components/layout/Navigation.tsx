@@ -20,7 +20,9 @@ const NAV_ITEMS: Record<string, { label: string; icon: string; href: string }[]>
     { label: 'Socios', icon: '👥', href: '/admin/socios' },
     { label: 'Negocios', icon: '🏪', href: '/admin/prestadores' },
     { label: 'Créditos', icon: '💰', href: '/admin/acreditaciones' },
+    { label: 'Financiera', icon: '🏦', href: '/admin/financiera' },
     { label: 'Ventas', icon: '🧾', href: '/admin/transacciones' },
+    { label: 'Liquidaciones', icon: '📑', href: '/admin/cuotas' },
     { label: 'Config', icon: '⚙️', href: '/admin/configuracion' },
   ],
 };

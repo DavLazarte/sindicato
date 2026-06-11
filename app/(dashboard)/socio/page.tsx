@@ -103,6 +103,50 @@ export default function SocioDashboard() {
           </div>
         )}
 
+        {/* Prestamos Vigentes */}
+        {data.prestamos_vigentes && data.prestamos_vigentes.length > 0 && (
+          <div className="bg-white rounded-3xl border border-blue-200 shadow-sm overflow-hidden mt-6 mb-6">
+            <div className="p-5 border-b border-blue-100 bg-blue-50 flex items-center justify-between">
+              <h2 className="text-base font-bold text-blue-800 flex items-center gap-2">
+                <span>🏦</span> Mis Préstamos
+              </h2>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {data.prestamos_vigentes.map((prestamo) => (
+                <div key={prestamo.id} className="p-5 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-bold text-slate-800">
+                      Total a devolver: <span className="text-blue-600">{formatMoney(prestamo.monto_total)}</span>
+                    </p>
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-blue-100 text-blue-700">
+                      {prestamo.cuotas_pagadas} / {prestamo.cantidad_cuotas} Pagadas
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2">
+                    {prestamo.cuotas_prestamo?.map(cuota => (
+                      <div key={cuota.id} className={`flex items-center justify-between p-3 rounded-xl border ${cuota.estado === 'pagada' ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-slate-200'}`}>
+                        <div>
+                          <p className="text-xs font-bold text-slate-500 mb-0.5">Cuota {cuota.nro_cuota}</p>
+                          <p className="text-sm font-black text-slate-800">{formatMoney(cuota.monto)}</p>
+                          <p className="text-[10px] text-slate-400 capitalize mt-0.5">{cuota.periodo?.nombre || 'Sin periodo'}</p>
+                        </div>
+                        <div>
+                          {cuota.estado === 'pagada' ? (
+                            <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">✅ Pagada</span>
+                          ) : (
+                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1">⌛ Pendiente</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Recent Transactions */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm">
           <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -112,46 +156,39 @@ export default function SocioDashboard() {
             </a>
           </div>
           <div className="divide-y divide-slate-50">
-            {(!data.transacciones || data.transacciones.length === 0) && (
+            {(!data.movimientos || data.movimientos.length === 0) && (
               <div className="p-8 text-center">
-                <span className="text-4xl block mb-3">🛒</span>
+                <span className="text-4xl block mb-3">📋</span>
                 <p className="text-slate-400 text-sm">No tenés movimientos todavía</p>
               </div>
             )}
-            {data.transacciones?.map((t: Transaccion) => {
-              let displayAmount = formatMoney(t.monto_total);
-              let subtext = null;
-              const isAnulada = t.estado === 'anulada';
-
-              if (t.es_cuotas && t.cuotas && t.cuotas.length > 0) {
-                const cobradas = t.cuotas.filter(c => c.estado === 'cobrada');
-                const montoCobrado = cobradas.reduce((acc, c) => acc + c.monto, 0);
-                if (montoCobrado > 0) {
-                  displayAmount = formatMoney(montoCobrado);
-                  subtext = `Venta total: ${formatMoney(t.monto_total)}`;
-                }
-              }
+            {data.movimientos?.map((mov) => {
+              const isAnulada = mov.estado === 'anulada';
+              const isPositive = mov.signo === '+';
 
               return (
-                <div key={t.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+                <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
                   <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 ${
-                    isAnulada ? 'bg-slate-100' : 'bg-red-50'
+                    isAnulada ? 'bg-slate-100' : isPositive ? 'bg-emerald-50' : 'bg-red-50'
                   }`}>
-                    {isAnulada ? '❌' : '🛒'}
+                    {isAnulada ? '❌' : isPositive ? '💰' : '🛒'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">
-                      {t.prestador?.nombre || 'Negocio'}
+                      {mov.titulo}
                     </p>
-                    <p className="text-xs text-slate-400 mt-0.5">{formatDate(t.created_at)}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{formatDate(mov.fecha)}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${isAnulada ? 'text-slate-400 line-through' : 'text-red-500'}`}>
-                      -{displayAmount}
+                    <p className={`text-sm font-bold ${isAnulada ? 'text-slate-400 line-through' : isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {mov.signo}{formatMoney(mov.monto)}
                     </p>
-                    {subtext && <p className="text-[10px] text-slate-500 font-medium mb-1">{subtext}</p>}
-                    {t.es_cuotas && (
-                      <p className="text-[10px] font-medium text-blue-500 mt-0.5">En cuotas</p>
+                    {mov.estado && mov.estado !== 'completado' && mov.estado !== 'confirmada' && mov.estado !== 'cobrada' && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${
+                        isAnulada ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-600'
+                      }`}>
+                        {mov.estado}
+                      </span>
                     )}
                   </div>
                 </div>

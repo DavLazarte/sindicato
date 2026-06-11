@@ -83,6 +83,62 @@ export default function PrestadorDashboard() {
             </div>
           </div>
 
+          {/* Fila Inferior: Cuotas Pendientes y Cobradas */}
+          <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+            
+            {/* Cuotas Pendientes */}
+            <div className="bg-white rounded-3xl border border-amber-200 shadow-sm h-full overflow-hidden flex flex-col max-h-[400px]">
+              <div className="p-5 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
+                <h2 className="text-base font-bold text-amber-800 flex items-center gap-2"><span>⏳</span> Cuotas a cobrar</h2>
+              </div>
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+                {(!data?.cuotas_pendientes || data.cuotas_pendientes.length === 0) && (
+                  <div className="p-12 text-center text-slate-400 text-sm">No hay cuotas pendientes a cobrar</div>
+                )}
+                {data?.cuotas_pendientes?.map(cuota => (
+                  <div key={cuota.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center text-lg shrink-0">🗓️</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{cuota.transaccion?.socio?.nombre} {cuota.transaccion?.socio?.apellido}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Legajo: {cuota.transaccion?.socio?.legajo} · Mes: <span className="font-bold capitalize">{cuota.periodo?.nombre}</span></p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-amber-600">{formatMoney(cuota.monto)}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider">Cuota {cuota.nro_cuota}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cuotas Descontadas */}
+            <div className="bg-white rounded-3xl border border-blue-200 shadow-sm h-full overflow-hidden flex flex-col max-h-[400px]">
+              <div className="p-5 border-b border-blue-100 bg-blue-50 flex items-center justify-between">
+                <h2 className="text-base font-bold text-blue-800 flex items-center gap-2"><span>✅</span> Cuotas cobradas (últimos mov.)</h2>
+              </div>
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+                {(!data?.cuotas_cobradas || data.cuotas_cobradas.length === 0) && (
+                  <div className="p-12 text-center text-slate-400 text-sm">No hay cuotas cobradas recientemente</div>
+                )}
+                {data?.cuotas_cobradas?.map(cuota => (
+                  <div key={cuota.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center text-lg shrink-0">💸</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{cuota.transaccion?.socio?.nombre} {cuota.transaccion?.socio?.apellido}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Cobrada el {new Date(cuota.cobrada_en || '').toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-black text-blue-600">+{formatMoney(cuota.monto)}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wider">Cuota {cuota.nro_cuota}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </>

@@ -30,29 +30,6 @@ export default function PrestadorCobrar() {
   const [resultado, setResultado] = useState<'success' | 'error' | null>(null);
   const [mensajeResultado, setMensajeResultado] = useState('');
 
-  const [cobrandoCuota, setCobrandoCuota] = useState<number | null>(null);
-
-  const cobrarCuotaManual = async (cuotaId: number) => {
-    if (!confirm('¿Estás seguro de cobrar esta cuota ahora? Se descontará del saldo del socio.')) return;
-    setCobrandoCuota(cuotaId);
-    setResultado(null);
-    try {
-      await api.post(`/prestador/cuotas/${cuotaId}/cobrar`);
-      setResultado('success');
-      setMensajeResultado('Cuota cobrada correctamente');
-      // Refrescar los datos del socio para ver saldo nuevo y cuotas actualizadas
-      if (legajo.trim()) {
-        const res = await api.get<ApiResponse<SocioBuscado>>(`/prestador/socios/buscar?legajo=${legajo.trim()}`);
-        setSocio(res.data);
-      }
-    } catch (err: unknown) {
-      setResultado('error');
-      setMensajeResultado(err instanceof Error ? err.message : 'Error al cobrar cuota');
-    } finally {
-      setCobrandoCuota(null);
-    }
-  };
-
   const buscarSocio = async () => {
     if (!legajo.trim()) return;
     setErrorBusqueda('');
@@ -183,13 +160,9 @@ export default function PrestadorCobrar() {
                       Monto: <strong className="text-amber-600">{formatMoney(cuota.monto)}</strong> (Cuota {cuota.nro_cuota})
                     </p>
                   </div>
-                  <button
-                    onClick={() => cobrarCuotaManual(cuota.id)}
-                    disabled={cobrandoCuota === cuota.id || socio.saldo_disponible < cuota.monto}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {cobrandoCuota === cuota.id ? '...' : 'Cobrar cuota'}
-                  </button>
+                  <div className="px-4 py-2 bg-amber-50 text-amber-600 text-xs font-bold rounded-xl whitespace-nowrap border border-amber-100">
+                    Pendiente de descuento automático
+                  </div>
                 </div>
               ))}
             </div>
@@ -230,7 +203,7 @@ export default function PrestadorCobrar() {
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cantidad de cuotas</label>
                 <div className="flex gap-2 flex-wrap">
-                  {[2, 3, 4, 6, 9, 12].map((n) => (
+                  {[2, 3].map((n) => (
                     <button key={n} onClick={() => setCantCuotas(n)}
                       className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${cantCuotas === n ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       {n}x
