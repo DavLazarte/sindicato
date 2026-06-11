@@ -86,7 +86,7 @@ export default function AdminCuotas() {
       const totalMonto = data.reduce((acc, c) => acc + Number(c.monto), 0);
       
       rows.push({
-        "Fecha de Cobro": '', Socio: '', Legajo: '', Negocio: '', "Nro Cuota": 0, "Período de Venta": 'TOTAL', Monto: totalMonto, Estado: ''
+        "Fecha de Cobro": '', Socio: '', Legajo: '', Negocio: '', "Nro Cuota": 0, "Período de Venta": 'TOTAL', Monto: totalMonto, Estado: '' as any
       });
 
       const ws = XLSX.utils.json_to_sheet(rows);
