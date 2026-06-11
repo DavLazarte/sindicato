@@ -101,7 +101,7 @@ export default function AdminTransacciones() {
       const totalCobrado = data.reduce((acc, t) => t.estado === 'confirmada' ? acc + Number(t.monto_cobrado) : acc, 0);
       
       rows.push({
-        Fecha: '', Socio: '', Legajo: '', Negocio: '', "Total Venta": totalVenta, "Monto Cobrado": totalCobrado, Cuotas: 'TOTAL CONFIRMADAS', Estado: ''
+        Fecha: '', Socio: '', Legajo: '', Negocio: '', "Total Venta": totalVenta, "Monto Cobrado": totalCobrado, Cuotas: 'TOTAL CONFIRMADAS', Estado: '' as any
       });
 
       const ws = XLSX.utils.json_to_sheet(rows);
