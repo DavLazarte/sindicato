@@ -61,8 +61,8 @@ export default function SocioDashboard() {
         {/* Quick Stats */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 font-medium mb-1">Compras del mes</p>
-            <p className="text-2xl font-bold text-slate-800">{data.transacciones?.length || 0}</p>
+            <p className="text-xs text-slate-500 font-medium mb-1">Movimientos</p>
+            <p className="text-2xl font-bold text-slate-800">{data.movimientos?.length || 0}</p>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
             <p className="text-xs text-slate-500 font-medium mb-1">Socio</p>
