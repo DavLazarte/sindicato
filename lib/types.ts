@@ -174,7 +174,6 @@ export interface DashboardSocio {
   estado: string;
   movimientos: Movimiento[];
   cuotas_pendientes?: Cuota[];
-  cuotas_pendientes?: Cuota[];
   prestamos_vigentes?: Prestamo[];
 }
 
