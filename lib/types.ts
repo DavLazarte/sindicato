@@ -43,7 +43,7 @@ export interface Transaccion {
   socio_id: number;
   prestador_id: number;
   periodo_id: number;
-  tipo: 'compra' | 'anulacion' | 'ajuste';
+  tipo: 'compra' | 'anulacion' | 'ajuste' | 'manual';
   monto_total: number;
   monto_cobrado: number;
   estado: 'pendiente' | 'confirmada' | 'anulada';
@@ -56,6 +56,7 @@ export interface Transaccion {
   prestador?: Prestador;
   periodo?: Periodo;
   cuotas?: Cuota[];
+  audit_logs?: any[];
 }
 
 export interface Movimiento {
