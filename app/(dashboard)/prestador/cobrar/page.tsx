@@ -202,17 +202,17 @@ export default function PrestadorCobrar() {
             {esCuotas && (
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cantidad de cuotas</label>
-                <div className="flex gap-2 flex-wrap">
-                  {[2, 3].map((n) => (
-                    <button key={n} onClick={() => setCantCuotas(n)}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${cantCuotas === n ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                      {n}x
-                    </button>
-                  ))}
-                </div>
-                {monto && parseFloat(monto) > 0 && (
-                  <p className="text-sm text-slate-500 mt-3 font-medium">
-                    {cantCuotas} cuotas de <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto) / cantCuotas)}</span>
+                <input
+                  type="number"
+                  min="2"
+                  max="24"
+                  value={cantCuotas}
+                  onChange={(e) => setCantCuotas(parseInt(e.target.value) || 2)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-base font-bold text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                />
+                {monto && parseFloat(monto) > 0 && cantCuotas > 0 && (
+                  <p className="text-sm text-slate-500 mt-3 font-medium bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                    Se descontarán <strong className="text-emerald-700">{cantCuotas} cuotas</strong> de <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto) / cantCuotas)}</span>
                   </p>
                 )}
               </div>
