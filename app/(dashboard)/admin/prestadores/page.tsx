@@ -68,6 +68,16 @@ export default function AdminPrestadores() {
     fetchData(page);
   };
 
+  const handleResetPassword = async (id: number) => {
+    if (!confirm('¿Seguro que querés restaurar la contraseña de este negocio a su Usuario/CUIT original?')) return;
+    try {
+      const res = await api.post(`/admin/prestadores/${id}/reset-password`);
+      alert(res.data?.message || 'Contraseña restaurada.');
+    } catch (err: any) {
+      alert(err?.message || 'Error al restaurar contraseña.');
+    }
+  };
+
   const handleSearch = (value: string) => {
     setSearch(value);
   };
@@ -162,9 +172,16 @@ export default function AdminPrestadores() {
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono</label>
                   <input type="text" autoComplete="off" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-purple-500 transition-all" /></div>
               </div>
-              {!editingPrestador && (
+              {!editingPrestador ? (
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Contraseña inicial</label>
                   <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-purple-500 transition-all" /></div>
+              ) : (
+                <div className="flex flex-col items-start bg-slate-50 p-3 rounded-xl border border-slate-200 mt-2">
+                  <span className="block text-xs font-bold text-slate-500 uppercase mb-2">Seguridad</span>
+                  <button type="button" onClick={() => editingPrestador && handleResetPassword(editingPrestador.id)} className="text-xs font-bold px-3 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors">
+                    🔑 Restaurar Contraseña al Usuario
+                  </button>
+                </div>
               )}
             </div>
             <div className="flex gap-3 mt-6">

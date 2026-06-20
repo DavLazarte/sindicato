@@ -75,6 +75,16 @@ export default function AdminSocios() {
     fetchData(page);
   };
 
+  const handleResetPassword = async (id: number) => {
+    if (!confirm('¿Seguro que querés restaurar la contraseña de este socio a su legajo original?')) return;
+    try {
+      const res = await api.post(`/admin/socios/${id}/reset-password`);
+      alert(res.data?.message || 'Contraseña restaurada.');
+    } catch (err: any) {
+      alert(err?.message || 'Error al restaurar contraseña.');
+    }
+  };
+
   const handleSearch = (value: string) => {
     setSearch(value);
   };
@@ -180,9 +190,16 @@ export default function AdminSocios() {
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Celular</label>
                   <input type="text" autoComplete="off" value={form.celular} onChange={(e) => setForm({...form, celular: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
               </div>
-              {!editingSocio && (
+              {!editingSocio ? (
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Contraseña</label>
                   <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
+              ) : (
+                <div className="flex flex-col items-start bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="block text-xs font-bold text-slate-500 uppercase mb-2">Seguridad</span>
+                  <button type="button" onClick={() => editingSocio && handleResetPassword(editingSocio.id)} className="text-xs font-bold px-3 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors">
+                    🔑 Restaurar Contraseña a Legajo
+                  </button>
+                </div>
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Saldo inicial</label>
