@@ -48,8 +48,11 @@ export interface Transaccion {
   monto_cobrado: number;
   estado: 'pendiente' | 'confirmada' | 'anulada';
   es_cuotas: boolean;
+  detalle?: string | null;
   anulada_por: number | null;
   motivo_anulacion: string | null;
+  editada_por?: number | null;
+  motivo_edicion?: string | null;
   created_at: string;
   updated_at: string;
   socio?: Socio;
@@ -57,6 +60,7 @@ export interface Transaccion {
   periodo?: Periodo;
   cuotas?: Cuota[];
   audit_logs?: any[];
+  editada_por_user?: User;
 }
 
 export interface Movimiento {
@@ -68,6 +72,7 @@ export interface Movimiento {
   signo: '+' | '-';
   estado: string;
   fecha: string;
+  detalle?: string | null;
 }
 
 export interface Cuota {

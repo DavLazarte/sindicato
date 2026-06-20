@@ -25,6 +25,8 @@ export default function PrestadorCobrar() {
   const [monto, setMonto] = useState('');
   const [esCuotas, setEsCuotas] = useState(false);
   const [cantCuotas, setCantCuotas] = useState(3);
+  const [detalle, setDetalle] = useState('');
+  const [cobroDiferido, setCobroDiferido] = useState(false);
   const [cobrando, setCobrando] = useState(false);
 
   const [resultado, setResultado] = useState<'success' | 'error' | null>(null);
@@ -58,12 +60,17 @@ export default function PrestadorCobrar() {
         monto_total: m,
         es_cuotas: esCuotas,
         cantidad_cuotas: esCuotas ? cantCuotas : undefined,
+        detalle: detalle.trim() || undefined,
+        cobro_diferido: esCuotas ? cobroDiferido : false,
       });
       setResultado('success');
       setMensajeResultado(`Cobro de ${formatMoney(m)} a ${socio.nombre_completo} registrado`);
       // Reset form
       setMonto('');
       setEsCuotas(false);
+      setCantCuotas(3);
+      setDetalle('');
+      setCobroDiferido(false);
       setSocio(null);
       setLegajo('');
     } catch (err: unknown) {
@@ -79,6 +86,8 @@ export default function PrestadorCobrar() {
     setLegajo('');
     setMonto('');
     setEsCuotas(false);
+    setDetalle('');
+    setCobroDiferido(false);
     setResultado(null);
   };
 
@@ -188,6 +197,18 @@ export default function PrestadorCobrar() {
               />
             </div>
 
+            {/* Detalle opcional */}
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Detalle de la venta (Opcional)</label>
+              <input
+                type="text"
+                value={detalle}
+                onChange={(e) => setDetalle(e.target.value)}
+                placeholder="Ej: Zapatillas Nike talle 42"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+              />
+            </div>
+
             {/* Cuotas toggle */}
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl mb-4">
               <span className="text-sm font-semibold text-slate-700">¿Pago en cuotas?</span>
@@ -212,9 +233,22 @@ export default function PrestadorCobrar() {
                 />
                 {monto && parseFloat(monto) > 0 && cantCuotas > 0 && (
                   <p className="text-sm text-slate-500 mt-3 font-medium bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-                    Se descontarán <strong className="text-emerald-700">{cantCuotas} cuotas</strong> de <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto) / cantCuotas)}</span>
+                    Se generarán <strong className="text-emerald-700">{cantCuotas} cuotas</strong> de <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto) / cantCuotas)}</span>
                   </p>
                 )}
+
+                <label className="mt-4 flex items-start gap-3 p-4 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={cobroDiferido}
+                    onChange={(e) => setCobroDiferido(e.target.checked)}
+                    className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div>
+                    <span className="block text-sm font-bold text-slate-800">Diferir cobro (1° cuota el mes que viene)</span>
+                    <span className="block text-xs text-slate-500 mt-1">Si marcás esto, HOY no se le descuenta nada al socio. La primera cuota pasará para el mes que viene.</span>
+                  </div>
+                </label>
               </div>
             )}
 
@@ -230,10 +264,18 @@ export default function PrestadorCobrar() {
                   <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto))}</span>
                 </div>
                 {esCuotas && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Modalidad</span>
-                    <span className="font-semibold text-blue-600">{cantCuotas} cuotas</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-slate-500">Modalidad</span>
+                      <span className="font-semibold text-blue-600">{cantCuotas} cuotas</span>
+                    </div>
+                    {cobroDiferido && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Descuento HOY</span>
+                        <span className="font-bold text-emerald-600">$0 (Diferido)</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

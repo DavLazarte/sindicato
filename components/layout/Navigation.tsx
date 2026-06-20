@@ -14,6 +14,7 @@ const NAV_ITEMS: Record<string, { label: string; icon: string; href: string }[]>
     { label: 'Inicio', icon: '🏠', href: '/prestador' },
     { label: 'Cobrar', icon: '💳', href: '/prestador/cobrar' },
     { label: 'Historial', icon: '📋', href: '/prestador/historial' },
+    { label: 'Pendientes', icon: '⏳', href: '/prestador/pendientes' },
     { label: 'Cuotas previas', icon: '📂', href: '/prestador/cuotas-viejas' },
     { label: 'Perfil', icon: '⚙️', href: '/prestador/perfil' },
   ],

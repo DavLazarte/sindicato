@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx-js-style';
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 function formatDate(d: string) { return new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
-type EditModal = { open: true; t: Transaccion; newMonto: string } | { open: false };
+type EditModal = { open: true; t: Transaccion; newMonto: string; motivo: string } | { open: false };
 type AnulModal = { open: true; t: Transaccion; motivo: string } | { open: false };
 
 export default function PrestadorHistorial() {
@@ -105,9 +105,14 @@ export default function PrestadorHistorial() {
     if (!editModal.open) return;
     const nuevoMonto = parseFloat(editModal.newMonto);
     if (!nuevoMonto || nuevoMonto <= 0) return alert('Ingresá un monto válido.');
+    if (!editModal.motivo.trim()) return alert('El motivo de la edición es obligatorio.');
+    
     setSaving(true);
     try {
-      await api.put(`/prestador/transacciones/${editModal.t.id}`, { monto_total: nuevoMonto });
+      await api.put(`/prestador/transacciones/${editModal.t.id}`, { 
+        monto_total: nuevoMonto,
+        motivo_edicion: editModal.motivo,
+      });
       setEditModal({ open: false });
       fetchData(page);
     } catch (err: any) {
@@ -160,6 +165,15 @@ export default function PrestadorHistorial() {
                   : `⚠️ Se descontarán ${formatMoney(parseFloat(editModal.newMonto) - editModal.t.monto_total)} del socio`}
               </div>
             )}
+            
+            <label className="block text-xs font-bold text-slate-500 mb-1">Motivo de edición <span className="text-red-500">*</span></label>
+            <textarea
+              value={editModal.motivo}
+              onChange={e => setEditModal({ ...editModal, motivo: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 mb-4 resize-none"
+              placeholder="Ej: El socio devolvió un producto..."
+            />
             <div className="flex gap-2">
               <button onClick={() => setEditModal({ open: false })} className="flex-1 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
               <button onClick={handleConfirmEditar} disabled={saving} className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50">
@@ -266,6 +280,7 @@ export default function PrestadorHistorial() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-800">{t.socio?.nombre} {t.socio?.apellido}</p>
                         <p className="text-xs text-slate-400 mb-1">{t.socio?.legajo} · {formatDate(t.created_at)}</p>
+                        {t.detalle && <p className="text-xs text-slate-600 mb-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md inline-block">📝 {t.detalle}</p>}
                         <div className="flex gap-1 flex-wrap">
                           {isManual && <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full">Carga manual</span>}
                           {t.es_cuotas && !isManual && <span className="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-2 py-0.5 rounded-full">En cuotas</span>}
@@ -286,7 +301,7 @@ export default function PrestadorHistorial() {
                       <div className="flex gap-2 mt-3 ml-13">
                         {!t.es_cuotas && !isManual && (
                           <button
-                            onClick={() => setEditModal({ open: true, t, newMonto: String(t.monto_total) })}
+                            onClick={() => setEditModal({ open: true, t, newMonto: String(t.monto_total), motivo: '' })}
                             className="text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
                           >
                             ✏️ Editar monto
@@ -301,7 +316,14 @@ export default function PrestadorHistorial() {
                       </div>
                     )}
                     {isAnulada && t.motivo_anulacion && (
-                      <p className="text-xs text-slate-400 mt-2 ml-13 italic">Motivo: {t.motivo_anulacion}</p>
+                      <p className="text-xs text-slate-400 mt-2 ml-13 italic">Motivo de anulación: {t.motivo_anulacion}</p>
+                    )}
+                    {t.motivo_edicion && (
+                      <div className="mt-2 ml-13 bg-amber-50/50 border border-amber-100 p-2 rounded-xl">
+                        <p className="text-[11px] font-bold text-amber-800">Venta editada</p>
+                        <p className="text-xs text-amber-700 mt-0.5">Motivo: {t.motivo_edicion}</p>
+                        {t.editada_por_user && <p className="text-[10px] text-amber-600/70 mt-1">Por: {t.editada_por_user.name}</p>}
+                      </div>
                     )}
                     {t.audit_logs && t.audit_logs.length > 0 && (
                       <div className="mt-3 ml-13 space-y-1.5">

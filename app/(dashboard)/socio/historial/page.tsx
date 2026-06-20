@@ -57,6 +57,7 @@ export default function SocioHistorial() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate">{mov.titulo}</p>
                       <p className="text-xs text-slate-400 mt-0.5">{formatDate(mov.fecha)}</p>
+                      {mov.detalle && <p className="text-[11px] mt-1 text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg inline-block">📝 {mov.detalle}</p>}
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`text-sm font-bold ${isAnulada ? 'text-slate-400 line-through' : isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
