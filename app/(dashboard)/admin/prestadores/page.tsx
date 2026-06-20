@@ -69,7 +69,7 @@ export default function AdminPrestadores() {
   };
 
   const handleResetPassword = async (id: number) => {
-    if (!confirm('¿Seguro que querés restaurar la contraseña de este negocio a su Usuario/CUIT original?')) return;
+    if (!confirm('¿Seguro que querés restaurar la contraseña de este negocio a "prestador.123"?')) return;
     try {
       const res = await api.post(`/admin/prestadores/${id}/reset-password`);
       alert((res.data as any)?.message || 'Contraseña restaurada.');
@@ -179,7 +179,7 @@ export default function AdminPrestadores() {
                 <div className="flex flex-col items-start bg-slate-50 p-3 rounded-xl border border-slate-200 mt-2">
                   <span className="block text-xs font-bold text-slate-500 uppercase mb-2">Seguridad</span>
                   <button type="button" onClick={() => editingPrestador && handleResetPassword(editingPrestador.id)} className="text-xs font-bold px-3 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors">
-                    🔑 Restaurar Contraseña al Usuario
+                    🔑 Restaurar Contraseña a "prestador.123"
                   </button>
                 </div>
               )}
