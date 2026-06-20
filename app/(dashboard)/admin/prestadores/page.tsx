@@ -72,7 +72,7 @@ export default function AdminPrestadores() {
     if (!confirm('¿Seguro que querés restaurar la contraseña de este negocio a su Usuario/CUIT original?')) return;
     try {
       const res = await api.post(`/admin/prestadores/${id}/reset-password`);
-      alert(res.data?.message || 'Contraseña restaurada.');
+      alert((res.data as any)?.message || 'Contraseña restaurada.');
     } catch (err: any) {
       alert(err?.message || 'Error al restaurar contraseña.');
     }

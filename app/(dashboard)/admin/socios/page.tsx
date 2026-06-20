@@ -79,7 +79,7 @@ export default function AdminSocios() {
     if (!confirm('¿Seguro que querés restaurar la contraseña de este socio a su legajo original?')) return;
     try {
       const res = await api.post(`/admin/socios/${id}/reset-password`);
-      alert(res.data?.message || 'Contraseña restaurada.');
+      alert((res.data as any)?.message || 'Contraseña restaurada.');
     } catch (err: any) {
       alert(err?.message || 'Error al restaurar contraseña.');
     }
