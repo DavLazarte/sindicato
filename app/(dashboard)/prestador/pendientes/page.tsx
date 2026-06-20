@@ -66,10 +66,10 @@ export default function PrestadorCuotasPendientes() {
     setProcesando(true);
     setResultado(null);
     try {
-      const res = await api.post('/prestador/cuotas/cobrar-masivo', {
+      const res = await api.post<ApiResponse<{ message: string; cobradas: number; fallidas: number }>>('/prestador/cuotas/cobrar-masivo', {
         cuota_ids: Array.from(selectedIds)
       });
-      setResultado(res.data);
+      setResultado(res.data as any);
       setSelectedIds(new Set());
       fetchCuotas(page); // refetch current page
     } catch (err: any) {
