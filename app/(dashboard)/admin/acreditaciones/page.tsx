@@ -11,6 +11,7 @@ export default function AdminAcreditaciones() {
   // Form & Selection state
   const [monto, setMonto] = useState('');
   const [procesando, setProcesando] = useState(false);
+  const [descontarCuotas, setDescontarCuotas] = useState(true);
   
   // Socios list state
   const [socios, setSocios] = useState<Socio[]>([]);
@@ -121,7 +122,8 @@ export default function AdminAcreditaciones() {
     try {
       const res = await api.post<{ success: boolean; data: { socios_acreditados: number; monto: number; cuotas_cobradas: number } }>('/admin/acreditaciones/masiva', { 
         monto: m,
-        socio_ids: Array.from(selectedIds)
+        socio_ids: Array.from(selectedIds),
+        descontar_cuotas: descontarCuotas
       });
       alert(`✅ Acreditación exitosa. Se acreditó ${formatMoney(res.data.monto)} a ${res.data.socios_acreditados} socios. Se cobraron ${res.data.cuotas_cobradas} cuotas pendientes automáticamente.`);
       setMonto('');
@@ -167,6 +169,17 @@ export default function AdminAcreditaciones() {
                 {procesando ? 'Procesando...' : `Acreditar a ${selectedIds.size} socio(s)`}
               </button>
             </div>
+          </div>
+          <div className="mt-4 flex flex-col md:flex-row items-center justify-end max-w-4xl mx-auto">
+            <label className="flex items-center gap-2.5 cursor-pointer bg-white/10 px-4 py-2.5 rounded-xl text-sm font-medium text-emerald-50 hover:bg-white/20 transition-colors border border-white/10 w-full md:w-auto">
+              <input 
+                type="checkbox" 
+                checked={descontarCuotas} 
+                onChange={(e) => setDescontarCuotas(e.target.checked)}
+                className="w-5 h-5 rounded border-white/20 text-slate-900 focus:ring-white/50 bg-white/10"
+              />
+              <span>Descontar automáticamente las cuotas pendientes del período actual</span>
+            </label>
           </div>
         </div>
 
