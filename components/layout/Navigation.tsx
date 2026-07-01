@@ -22,11 +22,16 @@ const NAV_ITEMS: Record<string, { label: string; icon: string; href: string }[]>
     { label: 'Panel', icon: '📊', href: '/admin' },
     { label: 'Socios', icon: '👥', href: '/admin/socios' },
     { label: 'Negocios', icon: '🏪', href: '/admin/prestadores' },
+    { label: 'Usuarios', icon: '🔑', href: '/admin/usuarios' },
     { label: 'Créditos', icon: '💰', href: '/admin/acreditaciones' },
     { label: 'Financiera', icon: '🏦', href: '/admin/financiera' },
     { label: 'Ventas', icon: '🧾', href: '/admin/transacciones' },
     { label: 'Liquidaciones', icon: '📑', href: '/admin/cuotas' },
     { label: 'Config', icon: '⚙️', href: '/admin/configuracion' },
+  ],
+  admin_socios: [
+    { label: 'Panel', icon: '📊', href: '/admin-socios' },
+    { label: 'Socios', icon: '👥', href: '/admin-socios/socios' },
   ],
 };
 

@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'socio' | 'prestador';
+export type UserRole = 'admin' | 'socio' | 'prestador' | 'admin_socios';
 
 export interface User {
   id: number;
@@ -189,6 +189,8 @@ export interface DashboardPrestador {
   transacciones: Transaccion[];
   cuotas_pendientes?: Cuota[];
   cuotas_cobradas?: Cuota[];
+  desde?: string;
+  hasta?: string;
 }
 
 export interface DashboardAdmin {

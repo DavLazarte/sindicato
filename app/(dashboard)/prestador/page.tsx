@@ -11,14 +11,34 @@ function formatDate(date: string) { return new Date(date).toLocaleDateString('es
 export default function PrestadorDashboard() {
   const [data, setData] = useState<DashboardPrestador | null>(null);
   const [loading, setLoading] = useState(true);
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
 
-  useEffect(() => {
-    api.get<ApiResponse<DashboardPrestador>>('/prestador/dashboard')
-      .then((res) => setData(res.data))
+  const fetchDashboard = (d?: string, h?: string) => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (d) params.set('desde', d);
+    if (h) params.set('hasta', h);
+    api.get<ApiResponse<DashboardPrestador>>(`/prestador/dashboard?${params.toString()}`)
+      .then((res) => {
+        setData(res.data);
+        if (!d && res.data.desde) setDesde(res.data.desde);
+        if (!h && res.data.hasta) setHasta(res.data.hasta);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  };
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /></div>;
+  useEffect(() => { fetchDashboard(); }, []);
+
+  const handleFilterChange = (newDesde: string, newHasta: string) => {
+    setDesde(newDesde);
+    setHasta(newHasta);
+    if (newDesde && newHasta) {
+      fetchDashboard(newDesde, newHasta);
+    }
+  };
+
+  if (loading && !data) return <div className="flex-1 flex items-center justify-center"><div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /></div>;
 
   return (
     <>
@@ -32,15 +52,40 @@ export default function PrestadorDashboard() {
           
           {/* Columna Izquierda: Stats */}
           <div className="lg:col-span-5 space-y-4">
+            {/* Filtro de fechas */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm">
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-3">📅 Rango de fechas</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Desde</label>
+                  <input
+                    type="date"
+                    value={desde}
+                    onChange={(e) => handleFilterChange(e.target.value, hasta)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Hasta</label>
+                  <input
+                    type="date"
+                    value={hasta}
+                    onChange={(e) => handleFilterChange(desde, e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-center items-center text-center">
-              <p className="text-sm text-slate-500 font-medium mb-2 uppercase tracking-wider">Cobrado este mes</p>
+              <p className="text-sm text-slate-500 font-medium mb-2 uppercase tracking-wider">Cobrado en el período</p>
               <p className="text-4xl sm:text-5xl font-black text-emerald-600 mb-2">{formatMoney(data?.total_cobrado || 0)}</p>
-              <span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-3 py-1 rounded-full">Saldo actual</span>
+              {loading && <div className="w-5 h-5 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mt-1" />}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm text-center">
-                <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider">Ventas del mes</p>
+                <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider">Ventas</p>
                 <p className="text-2xl font-black text-slate-800">{data?.cantidad_transacciones || 0}</p>
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm text-center">

@@ -225,30 +225,39 @@ export default function PrestadorCobrar() {
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cantidad de cuotas</label>
                 <input
                   type="number"
-                  min="2"
+                  min="1"
                   max="24"
                   value={cantCuotas}
-                  onChange={(e) => setCantCuotas(parseInt(e.target.value) || 2)}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    setCantCuotas(val);
+                    if (val === 1) setCobroDiferido(true);
+                  }}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-base font-bold text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
+                {cantCuotas === 1 && (
+                  <p className="text-xs text-amber-600 font-medium mt-2 bg-amber-50 px-3 py-2 rounded-lg border border-amber-100">⚡ Pago diferido: se descontará en el próximo depósito.</p>
+                )}
                 {monto && parseFloat(monto) > 0 && cantCuotas > 0 && (
                   <p className="text-sm text-slate-500 mt-3 font-medium bg-emerald-50 rounded-xl p-3 border border-emerald-100">
                     Se generarán <strong className="text-emerald-700">{cantCuotas} cuotas</strong> de <span className="font-bold text-slate-800">{formatMoney(parseFloat(monto) / cantCuotas)}</span>
                   </p>
                 )}
 
-                <label className="mt-4 flex items-start gap-3 p-4 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={cobroDiferido}
-                    onChange={(e) => setCobroDiferido(e.target.checked)}
-                    className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <div>
-                    <span className="block text-sm font-bold text-slate-800">Diferir cobro (1° cuota el mes que viene)</span>
-                    <span className="block text-xs text-slate-500 mt-1">Si marcás esto, HOY no se le descuenta nada al socio. La primera cuota pasará para el mes que viene.</span>
-                  </div>
-                </label>
+                {cantCuotas > 1 && (
+                  <label className="mt-4 flex items-start gap-3 p-4 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={cobroDiferido}
+                      onChange={(e) => setCobroDiferido(e.target.checked)}
+                      className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <span className="block text-sm font-bold text-slate-800">Diferir cobro (1° cuota el mes que viene)</span>
+                      <span className="block text-xs text-slate-500 mt-1">Si marcás esto, HOY no se le descuenta nada al socio. La primera cuota pasará para el mes que viene.</span>
+                    </div>
+                  </label>
+                )}
               </div>
             )}
 

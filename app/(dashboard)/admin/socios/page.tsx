@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { TopBar } from '@/components/layout/Navigation';
 import type { ApiResponse, PaginatedData, Socio } from '@/lib/types';
 
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 
 export default function AdminSocios() {
+  const { user } = useAuth();
   const [socios, setSocios] = useState<Socio[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -202,8 +204,10 @@ export default function AdminSocios() {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Saldo inicial</label>
-                  <input type="number" value={form.saldo_disponible} onChange={(e) => setForm({...form, saldo_disponible: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
+                {(!editingSocio || user?.role === 'admin') && (
+                  <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Saldo inicial</label>
+                    <input type="number" value={form.saldo_disponible} onChange={(e) => setForm({...form, saldo_disponible: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
+                )}
                 {editingSocio && (
                   <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
                     <select value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all">

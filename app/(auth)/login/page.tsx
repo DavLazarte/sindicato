@@ -16,7 +16,8 @@ export default function LoginPage() {
   // If already logged in, redirect
   useEffect(() => {
     if (!loading && user) {
-      router.push(`/${user.role}`);
+      const routeMap: Record<string, string> = { admin_socios: '/admin-socios' };
+      router.push(routeMap[user.role] || `/${user.role}`);
     }
   }, [loading, user, router]);
 
