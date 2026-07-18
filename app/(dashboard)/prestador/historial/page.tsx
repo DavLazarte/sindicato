@@ -74,24 +74,32 @@ export default function PrestadorHistorial() {
       const data: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
 
       // ── Detalle de transacciones ──
-      const dataRows = data.map(t => ({
+      // Solo ventas directas (es_cuotas=false): las cuotas tienen su propio Excel en la pestaña "Cuotas cobradas"
+      // Incluirlas aquí generaría monto_cobrado incorrecto porque ese campo no filtra por fecha de cobro
+      const dataRows = data.filter(t => !t.es_cuotas).map(t => ({
         Fecha: new Date(t.created_at).toLocaleString('es-AR'),
         Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
         Legajo: t.socio?.legajo,
         'Total Venta': t.monto_total,
         'Monto Cobrado': t.monto_cobrado,
-        Tipo: t.es_cuotas ? 'Cuotas' : t.tipo === 'manual' ? 'Carga manual' : '1 Pago',
+        Tipo: t.tipo === 'manual' ? 'Carga manual' : '1 Pago',
         Estado: t.estado,
       }));
 
       // ── Totales desglosados ──
+      // Ventas directas: transacciones 1 pago confirmadas en el rango (created_at)
       const totalVentasDirectas = data
         .filter(t => t.estado !== 'anulada' && !t.es_cuotas)
         .reduce((acc, t) => acc + Number(t.monto_total), 0);
 
-      const totalCuotasCobradas = data
-        .filter(t => t.estado !== 'anulada' && t.es_cuotas)
-        .reduce((acc, t) => acc + Number(t.monto_cobrado), 0);
+      // Cuotas cobradas: consultamos el endpoint de cuotas filtrado por cobrada_en
+      // para NO incluir cuotas pagadas fuera del rango de fechas seleccionado
+      const cuotasParams = new URLSearchParams({ unpaginated: 'true' });
+      if (fechaDesde) cuotasParams.append('fecha_desde', fechaDesde);
+      if (fechaHasta) cuotasParams.append('fecha_hasta', fechaHasta);
+      const resCuotas = await api.get<ApiResponse<any>>(`/prestador/cuotas/cobradas?${cuotasParams.toString()}`);
+      const cuotasData: any[] = Array.isArray(resCuotas.data) ? resCuotas.data : resCuotas.data.data || [];
+      const totalCuotasCobradas = cuotasData.reduce((acc: number, c: any) => acc + Number(c.monto), 0);
 
       const totalCobrado = totalVentasDirectas + totalCuotasCobradas;
       const pctRecargo = parseFloat(recargo) || 0;
