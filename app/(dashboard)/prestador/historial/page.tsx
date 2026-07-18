@@ -68,25 +68,58 @@ export default function PrestadorHistorial() {
       const montoRecargo = Math.round(totalCobrado * pctRecargo / 100);
       const totalFinal = totalCobrado + montoRecargo;
 
-      rows.push({ Fecha: '', Socio: '', Legajo: '', 'Total Venta': '' as any, 'Monto Cobrado': totalCobrado, Tipo: 'TOTAL COBRADO', Estado: '' as any });
+      // ── Resumen al inicio ──
+      const summaryRows: any[] = [];
+      summaryRows.push({ Fecha: 'RESUMEN', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': '', Tipo: '', Estado: '' });
+      summaryRows.push({ Fecha: 'Total cobrado', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalCobrado, Tipo: '', Estado: '' });
       if (pctRecargo > 0) {
-        rows.push({ Fecha: '', Socio: '', Legajo: '', 'Total Venta': '' as any, 'Monto Cobrado': montoRecargo, Tipo: `Recargo financiero ${pctRecargo}%`, Estado: '' as any });
-        rows.push({ Fecha: '', Socio: '', Legajo: '', 'Total Venta': '' as any, 'Monto Cobrado': totalFinal, Tipo: 'TOTAL A LIQUIDAR', Estado: '' as any });
+        summaryRows.push({ Fecha: `Recargo financiero ${pctRecargo}%`, Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': montoRecargo, Tipo: '', Estado: '' });
+        summaryRows.push({ Fecha: 'TOTAL A LIQUIDAR', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalFinal, Tipo: '', Estado: '' });
       }
+      // Fila vacía separadora
+      summaryRows.push({ Fecha: '', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': '', Tipo: '', Estado: '' });
 
-      const ws = XLSX.utils.json_to_sheet(rows);
+      // ── Detalle ──
+      const dataRows = data.map(t => ({
+        Fecha: new Date(t.created_at).toLocaleString('es-AR'),
+        Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
+        Legajo: t.socio?.legajo,
+        'Total Venta': t.monto_total,
+        'Monto Cobrado': t.monto_cobrado,
+        Tipo: t.es_cuotas ? 'Cuotas' : t.tipo === 'manual' ? 'Carga manual' : '1 Pago',
+        Estado: t.estado,
+      }));
+
+      const allRows = [...summaryRows, ...dataRows];
+      const summaryCount = summaryRows.length;
+
+      const ws = XLSX.utils.json_to_sheet(allRows);
       const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G1');
-      const totalRows = pctRecargo > 0 ? 3 : 1;
+
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const ref = XLSX.utils.encode_cell({ c: C, r: R });
           if (!ws[ref]) continue;
           ws[ref].s = { font: { name: 'Arial', sz: 10 }, alignment: { vertical: 'center' } };
-          if (R === 0) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: 'FFFFFF' } }; ws[ref].s.fill = { fgColor: { rgb: '064E3B' } }; ws[ref].s.alignment = { horizontal: 'center', vertical: 'center' }; }
-          if (R > range.e.r - totalRows) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: '065F46' } }; ws[ref].s.fill = { fgColor: { rgb: 'D1FAE5' } }; }
+          // Fila de encabezado (row 0 = header generado por json_to_sheet)
+          if (R === 0) {
+            ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: 'FFFFFF' } };
+            ws[ref].s.fill = { fgColor: { rgb: '064E3B' } };
+            ws[ref].s.alignment = { horizontal: 'center', vertical: 'center' };
+          }
+          // Filas de resumen (filas 1 a summaryCount)
+          if (R >= 1 && R <= summaryCount) {
+            ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: '065F46' } };
+            ws[ref].s.fill = { fgColor: { rgb: 'D1FAE5' } };
+          }
+          // Título RESUMEN y TOTAL A LIQUIDAR en verde oscuro
+          if (R === 1 || (pctRecargo > 0 && R === summaryCount - 1)) {
+            ws[ref].s.font = { ...ws[ref].s.font, bold: true, sz: 11, color: { rgb: 'FFFFFF' } };
+            ws[ref].s.fill = { fgColor: { rgb: '064E3B' } };
+          }
         }
       }
-      ws['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }];
+      ws['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Cierre');

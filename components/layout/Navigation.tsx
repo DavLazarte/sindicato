@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
@@ -100,35 +101,95 @@ export function Sidebar() {
 }
 
 export function BottomNav() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const pathname = usePathname();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   if (!user) return null;
 
   const items = NAV_ITEMS[user.role] || [];
-  // On mobile, limit to 4 items max for bottom nav
-  const mobileItems = items.slice(0, 4);
+  const hasMore = items.length > 4;
+  // Show first 3 in footer + hamburger, or all 4 if exactly 4
+  const visibleItems = hasMore ? items.slice(0, 3) : items;
+  const drawerItems = hasMore ? items.slice(3) : [];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 safe-area-pb">
-      <div className="flex items-center justify-around h-16">
-        {mobileItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== `/${user.role}` && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
+    <>
+      {/* Bottom drawer overlay */}
+      {drawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {/* Drawer panel */}
+      <div className={`md:hidden fixed bottom-16 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 transition-transform duration-300 ${drawerOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-slate-300" />
+        </div>
+        <div className="p-4 grid grid-cols-3 gap-3">
+          {drawerItems.map((item) => {
+            const isActive = pathname === item.href || (item.href !== `/${user.role}` && pathname.startsWith(item.href));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setDrawerOpen(false)}
+                className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl transition-all ${
+                  isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-2xl">{item.icon}</span>
+                <span className="text-[11px] font-bold text-center leading-tight">{item.label}</span>
+              </Link>
+            );
+          })}
+          <button
+            onClick={() => { setDrawerOpen(false); logout(); }}
+            className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl bg-red-50 text-red-400 hover:bg-red-100 transition-all"
+          >
+            <span className="text-2xl">👋</span>
+            <span className="text-[11px] font-bold">Salir</span>
+          </button>
+        </div>
+        <div className="h-safe-area-bottom pb-2" />
+      </div>
+
+      {/* Bottom nav bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 safe-area-pb">
+        <div className="flex items-center justify-around h-16">
+          {visibleItems.map((item) => {
+            const isActive = pathname === item.href || (item.href !== `/${user.role}` && pathname.startsWith(item.href));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all min-w-0 ${
+                  isActive ? 'text-emerald-600' : 'text-slate-400'
+                }`}
+              >
+                <span className={`text-xl transition-transform ${isActive ? 'scale-110' : ''}`}>{item.icon}</span>
+                <span className="text-[10px] font-bold truncate">{item.label}</span>
+                {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 mt-0.5" />}
+              </Link>
+            );
+          })}
+
+          {hasMore && (
+            <button
+              onClick={() => setDrawerOpen(prev => !prev)}
               className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all min-w-0 ${
-                isActive ? 'text-emerald-600' : 'text-slate-400'
+                drawerOpen ? 'text-emerald-600' : 'text-slate-400'
               }`}
             >
-              <span className={`text-xl transition-transform ${isActive ? 'scale-110' : ''}`}>{item.icon}</span>
-              <span className="text-[10px] font-bold truncate">{item.label}</span>
-              {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 mt-0.5" />}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+              <span className={`text-xl transition-transform ${drawerOpen ? 'rotate-90 scale-110' : ''}`}>☰</span>
+              <span className="text-[10px] font-bold">Más</span>
+              {drawerOpen && <div className="w-1 h-1 rounded-full bg-emerald-500 mt-0.5" />}
+            </button>
+          )}
+        </div>
+      </nav>
+    </>
   );
 }
 

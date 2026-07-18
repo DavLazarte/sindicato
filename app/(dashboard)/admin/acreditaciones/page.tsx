@@ -12,6 +12,7 @@ export default function AdminAcreditaciones() {
   const [monto, setMonto] = useState('');
   const [procesando, setProcesando] = useState(false);
   const [descontarCuotas, setDescontarCuotas] = useState(true);
+  const [pisarSaldo, setPisarSaldo] = useState(false);
   
   // Socios list state
   const [socios, setSocios] = useState<Socio[]>([]);
@@ -116,16 +117,17 @@ export default function AdminAcreditaciones() {
     if (!m || m <= 0) return;
     if (selectedIds.size === 0) return;
 
-    if (!confirm(`¿Estás seguro de acreditar ${formatMoney(m)} a los ${selectedIds.size} socios seleccionados? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Estás seguro de ${pisarSaldo ? 'PISAR el saldo y dejar en' : 'acreditar'} ${formatMoney(m)} a los ${selectedIds.size} socios seleccionados? Esta acción no se puede deshacer.`)) return;
 
     setProcesando(true);
     try {
       const res = await api.post<{ success: boolean; data: { socios_acreditados: number; monto: number; cuotas_cobradas: number } }>('/admin/acreditaciones/masiva', { 
         monto: m,
         socio_ids: Array.from(selectedIds),
-        descontar_cuotas: descontarCuotas
+        descontar_cuotas: descontarCuotas,
+        pisar_saldo: pisarSaldo
       });
-      alert(`✅ Acreditación exitosa. Se acreditó ${formatMoney(res.data.monto)} a ${res.data.socios_acreditados} socios. Se cobraron ${res.data.cuotas_cobradas} cuotas pendientes automáticamente.`);
+      alert(`✅ ${pisarSaldo ? 'Saldo pisado' : 'Acreditación'} exitosa. Se ${pisarSaldo ? 'fijó' : 'acreditó'} ${formatMoney(res.data.monto)} a ${res.data.socios_acreditados} socios. Se cobraron ${res.data.cuotas_cobradas} cuotas pendientes automáticamente.`);
       setMonto('');
       fetchSocios();
     } catch (err: unknown) {
@@ -170,7 +172,7 @@ export default function AdminAcreditaciones() {
               </button>
             </div>
           </div>
-          <div className="mt-4 flex flex-col md:flex-row items-center justify-end max-w-4xl mx-auto">
+          <div className="mt-4 flex flex-col md:flex-row items-center justify-end max-w-4xl mx-auto gap-3">
             <label className="flex items-center gap-2.5 cursor-pointer bg-white/10 px-4 py-2.5 rounded-xl text-sm font-medium text-emerald-50 hover:bg-white/20 transition-colors border border-white/10 w-full md:w-auto">
               <input 
                 type="checkbox" 
@@ -178,7 +180,20 @@ export default function AdminAcreditaciones() {
                 onChange={(e) => setDescontarCuotas(e.target.checked)}
                 className="w-5 h-5 rounded border-white/20 text-slate-900 focus:ring-white/50 bg-white/10"
               />
-              <span>Descontar automáticamente las cuotas pendientes del período actual</span>
+              <span>Descontar cuotas del período automáticamente</span>
+            </label>
+            <label className={`flex items-center gap-2.5 cursor-pointer px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border w-full md:w-auto ${
+              pisarSaldo 
+                ? 'bg-amber-400/30 border-amber-300/50 text-amber-100 hover:bg-amber-400/40' 
+                : 'bg-white/10 border-white/10 text-emerald-50 hover:bg-white/20'
+            }`}>
+              <input 
+                type="checkbox" 
+                checked={pisarSaldo} 
+                onChange={(e) => setPisarSaldo(e.target.checked)}
+                className="w-5 h-5 rounded border-white/20 text-slate-900 focus:ring-white/50 bg-white/10"
+              />
+              <span>⚠️ Pisar saldo (reemplazar, no sumar)</span>
             </label>
           </div>
         </div>
