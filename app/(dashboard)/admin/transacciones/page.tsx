@@ -25,6 +25,14 @@ export default function AdminTransacciones() {
   const [exporting, setExporting] = useState(false);
   const [expandedTransaccion, setExpandedTransaccion] = useState<number | null>(null);
 
+  // ── Resumen por negocio ──
+  const [resumenModal, setResumenModal] = useState(false);
+  const [resumenDesde, setResumenDesde] = useState('');
+  const [resumenHasta, setResumenHasta] = useState('');
+  const [resumenData, setResumenData] = useState<{nombre: string; totalVentas: number; totalCuotas: number; total: number}[]>([]);
+  const [resumenLoading, setResumenLoading] = useState(false);
+  const [resumenExporting, setResumenExporting] = useState(false);
+
   useEffect(() => {
     api.get<ApiResponse<Periodo[]>>('/admin/periodos').then(res => setPeriodos(res.data || []));
     api.get<ApiResponse<any>>('/admin/prestadores?unpaginated=1').then(res => {
@@ -161,20 +169,195 @@ export default function AdminTransacciones() {
     }
   };
 
+  // ── Resumen por negocio ──
+  const handleBuildResumen = async () => {
+    if (!resumenDesde || !resumenHasta) return alert('Ingresá las dos fechas.');
+    setResumenLoading(true);
+    try {
+      // Traer todas las transacciones del rango
+      const params = new URLSearchParams({ unpaginated: '1', fecha_desde: resumenDesde, fecha_hasta: resumenHasta });
+      const res = await api.get<ApiResponse<any>>(`/admin/transacciones?${params.toString()}`);
+      const txData: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
+
+      // Traer cuotas cobradas del rango
+      const cuotasRes = await api.get<ApiResponse<any>>(`/admin/cuotas?unpaginated=true&fecha_desde=${resumenDesde}&fecha_hasta=${resumenHasta}`);
+      const cuotasData: any[] = Array.isArray(cuotasRes.data) ? cuotasRes.data : cuotasRes.data.data || [];
+
+      // Agrupar ventas por negocio
+      // Solo pagos directos (es_cuotas=false) en totalVentas
+      // Las cuotas cobradas vienen del endpoint de cuotas (totalCuotas)
+      const mapa: Record<number, { nombre: string; totalVentas: number; totalCuotas: number }> = {};
+
+      txData.filter(t => t.estado === 'confirmada' && !t.es_cuotas).forEach(t => {
+        const pid = t.prestador?.id ?? 0;
+        if (!mapa[pid]) mapa[pid] = { nombre: t.prestador?.nombre ?? 'Sin nombre', totalVentas: 0, totalCuotas: 0 };
+        mapa[pid].totalVentas += Number(t.monto_total);
+      });
+
+      cuotasData.filter((c: any) => c.estado === 'cobrada').forEach((c: any) => {
+        const pid = c.transaccion?.prestador?.id ?? 0;
+        const nombre = c.transaccion?.prestador?.nombre ?? 'Sin nombre';
+        if (!mapa[pid]) mapa[pid] = { nombre, totalVentas: 0, totalCuotas: 0 };
+        mapa[pid].totalCuotas += Number(c.monto);
+      });
+
+      const rows = Object.values(mapa)
+        .map(r => ({ ...r, total: r.totalVentas + r.totalCuotas }))
+        .sort((a, b) => b.total - a.total);
+
+      setResumenData(rows);
+    } catch {
+      alert('Error al generar el resumen.');
+    } finally {
+      setResumenLoading(false);
+    }
+  };
+
+  const handleExportarResumen = () => {
+    if (resumenData.length === 0) return;
+    setResumenExporting(true);
+    try {
+      const totVentas = resumenData.reduce((a, r) => a + r.totalVentas, 0);
+      const totCuotas = resumenData.reduce((a, r) => a + r.totalCuotas, 0);
+      const totGeneral = totVentas + totCuotas;
+
+      const rows = [
+        ...resumenData.map(r => ({
+          'Negocio': r.nombre,
+          'Total Ventas': r.totalVentas,
+          'Total Cobros Cuotas': r.totalCuotas,
+          'Total General': r.total,
+        })),
+        { 'Negocio': 'TOTAL', 'Total Ventas': totVentas, 'Total Cobros Cuotas': totCuotas, 'Total General': totGeneral },
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:D1');
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const ref = XLSX.utils.encode_cell({ c: C, r: R });
+          if (!ws[ref]) continue;
+          ws[ref].s = { font: { name: 'Arial', sz: 10 }, alignment: { vertical: 'center' } };
+          if (R === 0) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: 'FFFFFF' } }; ws[ref].s.fill = { fgColor: { rgb: '475569' } }; ws[ref].s.alignment = { horizontal: 'center', vertical: 'center' }; }
+          if (R === range.e.r) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: '065F46' } }; ws[ref].s.fill = { fgColor: { rgb: 'D1FAE5' } }; }
+        }
+      }
+      ws['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 18 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Resumen por Negocio');
+      XLSX.writeFile(wb, `Resumen_${resumenDesde}_al_${resumenHasta}.xlsx`);
+    } finally {
+      setResumenExporting(false);
+    }
+  };
+
   return (
     <>
       <TopBar title="Ventas globales" subtitle="Transacciones" />
+
+      {/* Modal Resumen por Negocio */}
+      {resumenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-800">Resumen por Negocio</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Totales de ventas y cuotas por negocio en el rango seleccionado</p>
+              </div>
+              <button onClick={() => { setResumenModal(false); setResumenData([]); }} className="w-9 h-9 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center text-lg font-bold transition-colors">×</button>
+            </div>
+
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Desde</label>
+                  <input type="date" value={resumenDesde} onChange={e => setResumenDesde(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Hasta</label>
+                  <input type="date" value={resumenHasta} onChange={e => setResumenHasta(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-emerald-500 outline-none" />
+                </div>
+                <button
+                  onClick={handleBuildResumen}
+                  disabled={resumenLoading}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  {resumenLoading ? 'Cargando...' : '🔍 Consultar'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {resumenData.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 text-sm">{resumenLoading ? 'Generando resumen...' : 'Ingresá un rango de fechas y presioná Consultar.'}</div>
+              ) : (
+                <>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="text-left px-5 py-3 font-bold text-slate-600">Negocio</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Ventas</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Cuotas</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {resumenData.map((r, i) => (
+                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-5 py-3 font-medium text-slate-700">{r.nombre}</td>
+                          <td className="px-5 py-3 text-right text-slate-500">{r.totalVentas > 0 ? formatMoney(r.totalVentas) : <span className="text-slate-300">-</span>}</td>
+                          <td className="px-5 py-3 text-right text-slate-500">{r.totalCuotas > 0 ? formatMoney(r.totalCuotas) : <span className="text-slate-300">-</span>}</td>
+                          <td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(r.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-emerald-50 border-t-2 border-emerald-200">
+                        <td className="px-5 py-3 font-black text-emerald-800">TOTAL GENERAL</td>
+                        <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.totalVentas, 0))}</td>
+                        <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.totalCuotas, 0))}</td>
+                        <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.total, 0))}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </>
+              )}
+            </div>
+
+            {resumenData.length > 0 && (
+              <div className="p-5 border-t border-slate-100 flex justify-end">
+                <button
+                  onClick={handleExportarResumen}
+                  disabled={resumenExporting}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
+                >
+                  {resumenExporting ? 'Generando...' : '📊 Exportar a Excel'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="p-4 md:p-6">
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-6">
           <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
             <h2 className="text-lg font-black text-slate-800">Filtros y Exportación</h2>
-            <button 
-              onClick={handleExportar}
-              disabled={exporting}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
-            >
-              {exporting ? 'Generando Excel...' : '📊 Exportar a Excel'}
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setResumenModal(true)}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-sm transition-colors"
+              >
+                🏢 Resumen por Negocio
+              </button>
+              <button 
+                onClick={handleExportar}
+                disabled={exporting}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
+              >
+                {exporting ? 'Generando Excel...' : '📊 Exportar a Excel'}
+              </button>
+            </div>
           </div>
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
