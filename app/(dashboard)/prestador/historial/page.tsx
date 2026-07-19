@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { TopBar } from '@/components/layout/Navigation';
 import type { ApiResponse, PaginatedData, Transaccion } from '@/lib/types';
 import * as XLSX from 'xlsx-js-style';
@@ -13,6 +14,7 @@ type EditModal = { open: true; t: Transaccion; newMonto: string; motivo: string 
 type AnulModal = { open: true; t: Transaccion; motivo: string; devolverSaldo: boolean } | { open: false };
 
 export default function PrestadorHistorial() {
+  const { user } = useAuth();
   const [transacciones, setTransacciones] = useState<Transaccion[]>([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
@@ -76,27 +78,10 @@ export default function PrestadorHistorial() {
       const res = await api.get<ApiResponse<any>>(`/prestador/transacciones?unpaginated=1&${buildParams()}`);
       const data: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
 
-      // ── Detalle de transacciones ──
-      // Solo ventas directas (es_cuotas=false) que NO estén anuladas
-      // Las cuotas tienen su propio Excel en la pestaña "Cuotas cobradas"
-      const dataRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada').map(t => ({
-        Fecha: new Date(t.created_at).toLocaleString('es-AR'),
-        Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
-        Legajo: t.socio?.legajo,
-        'Total Venta': t.monto_total,
-        'Monto Cobrado': t.monto_cobrado,
-        Tipo: t.tipo === 'manual' ? 'Carga manual' : '1 Pago',
-        Estado: t.estado,
-      }));
+      const pctRecargo = parseFloat(recargo) || 0;
+      const colLabel = pctRecargo > 0 ? `Precio Act. +${pctRecargo}%` : '';
 
-      // ── Totales desglosados ──
-      // Ventas directas: transacciones 1 pago confirmadas en el rango (created_at)
-      const totalVentasDirectas = data
-        .filter(t => t.estado !== 'anulada' && !t.es_cuotas)
-        .reduce((acc, t) => acc + Number(t.monto_total), 0);
-
-      // Cuotas cobradas: consultamos el endpoint de cuotas filtrado por cobrada_en
-      // para NO incluir cuotas pagadas fuera del rango de fechas seleccionado
+      // ── Cuotas cobradas ──
       const cuotasParams = new URLSearchParams({ unpaginated: 'true' });
       if (fechaDesde) cuotasParams.append('fecha_desde', fechaDesde);
       if (fechaHasta) cuotasParams.append('fecha_hasta', fechaHasta);
@@ -104,66 +89,177 @@ export default function PrestadorHistorial() {
       const cuotasData: any[] = Array.isArray(resCuotas.data) ? resCuotas.data : resCuotas.data.data || [];
       const totalCuotasCobradas = cuotasData.reduce((acc: number, c: any) => acc + Number(c.monto), 0);
 
+      const totalVentasDirectas = data
+        .filter(t => t.estado !== 'anulada' && !t.es_cuotas)
+        .reduce((acc, t) => acc + Number(t.monto_total), 0);
+
       const totalCobrado = totalVentasDirectas + totalCuotasCobradas;
-      const pctRecargo = parseFloat(recargo) || 0;
       const montoRecargo = Math.round(totalCobrado * pctRecargo / 100);
       const totalFinal = totalCobrado + montoRecargo;
 
-      // ── Resumen al inicio ──
-      const summaryRows: any[] = [];
-      summaryRows.push({ Fecha: 'RESUMEN DEL CIERRE', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': '', Tipo: '', Estado: '' });
-      summaryRows.push({ Fecha: 'Ventas directas (1 pago)', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalVentasDirectas, Tipo: '', Estado: '' });
-      summaryRows.push({ Fecha: 'Cuotas cobradas', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalCuotasCobradas, Tipo: '', Estado: '' });
-      summaryRows.push({ Fecha: 'TOTAL COBRADO', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalCobrado, Tipo: '', Estado: '' });
+      const nombrePrestador = (user?.prestador as any)?.nombre ?? user?.name ?? 'Prestador';
+      const periodoLabel = fechaDesde && fechaHasta
+        ? `${fechaDesde} al ${fechaHasta}`
+        : fechaDesde ? `Desde ${fechaDesde}` : fechaHasta ? `Hasta ${fechaHasta}` : 'Período completo';
+
+      // Columnas
+      const colHeaders = ['Fecha', 'Socio', 'Legajo', 'Total Venta', 'Monto Cobrado', ...(pctRecargo > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
+      const nCols = colHeaders.length;
+      const emptyArr = () => Array(nCols).fill('');
+
+      const iMontoTotal = 3;
+      const iMontoCobrado = 4;
+      const iActualizado = pctRecargo > 0 ? 5 : -1;
+
+      const aoa: any[][] = [];
+      const moneyRows: { r: number; cols: number[] }[] = [];
+
+      // Fila 0: Título
+      aoa.push([`CIERRE DE VENTAS - ${nombrePrestador.toUpperCase()}`, ...Array(nCols - 1).fill('')]);
+      // Fila 1: Período
+      aoa.push([`Período: ${periodoLabel}`, ...Array(nCols - 1).fill('')]);
+      // Fila 2: vacía
+      aoa.push(emptyArr());
+
+      // ── Resumen ──
+      const summaryStartR = aoa.length;
+      aoa.push(['RESUMEN DEL CIERRE', ...Array(nCols - 1).fill('')]);
+
+      const pushSummaryRow = (label: string, monto: number) => {
+        const row = emptyArr();
+        row[0] = label;
+        row[iMontoCobrado] = monto;
+        moneyRows.push({ r: aoa.length, cols: [iMontoCobrado] });
+        aoa.push(row);
+      };
+      pushSummaryRow('Ventas directas (1 pago)', totalVentasDirectas);
+      pushSummaryRow('Cuotas cobradas', totalCuotasCobradas);
+      pushSummaryRow('TOTAL COBRADO', totalCobrado);
       if (pctRecargo > 0) {
-        summaryRows.push({ Fecha: `Actualización de precios ${pctRecargo}%`, Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': montoRecargo, Tipo: '', Estado: '' });
-        summaryRows.push({ Fecha: 'TOTAL A LIQUIDAR', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': totalFinal, Tipo: '', Estado: '' });
+        pushSummaryRow(`Actualización de precios ${pctRecargo}%`, montoRecargo);
+        pushSummaryRow('TOTAL A LIQUIDAR', totalFinal);
       }
-      // Fila vacía separadora
-      summaryRows.push({ Fecha: '', Socio: '', Legajo: '', 'Total Venta': '', 'Monto Cobrado': '', Tipo: '', Estado: '' });
+      const summaryEndR = aoa.length - 1;
+      aoa.push(emptyArr());
 
-      const allRows = [...summaryRows, ...dataRows];
-      const summaryCount = summaryRows.length;
+      // ── Ventas directas ──
+      const ventasSubtitleR = aoa.length;
+      aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+      const ventasColHeaderR = aoa.length;
+      aoa.push([...colHeaders]);
 
-      const ws = XLSX.utils.json_to_sheet(allRows);
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G1');
+      const ventasRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada');
+      ventasRows.forEach(t => {
+        const row = emptyArr();
+        row[0] = new Date(t.created_at).toLocaleString('es-AR');
+        row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
+        row[2] = t.socio?.legajo ?? '';
+        row[iMontoTotal] = Number(t.monto_total);
+        row[iMontoCobrado] = Number(t.monto_cobrado);
+        if (pctRecargo > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + pctRecargo / 100));
+        row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago';
+        row[nCols - 1] = t.estado;
+        const mCols = [iMontoTotal, iMontoCobrado, ...(pctRecargo > 0 ? [iActualizado] : [])];
+        moneyRows.push({ r: aoa.length, cols: mCols });
+        aoa.push(row);
+      });
 
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const ref = XLSX.utils.encode_cell({ c: C, r: R });
-          if (!ws[ref]) continue;
-          ws[ref].s = { font: { name: 'Arial', sz: 10 }, alignment: { vertical: 'center' } };
-          // Encabezado de columnas
-          if (R === 0) {
-            ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: 'FFFFFF' } };
-            ws[ref].s.fill = { fgColor: { rgb: '064E3B' } };
-            ws[ref].s.alignment = { horizontal: 'center', vertical: 'center' };
-          }
-          // Filas de resumen
-          if (R >= 1 && R <= summaryCount) {
-            ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: '065F46' } };
-            ws[ref].s.fill = { fgColor: { rgb: 'D1FAE5' } };
-          }
-          // Título RESUMEN y TOTAL A LIQUIDAR resaltados
-          if (R === 1 || (pctRecargo > 0 && R === summaryCount - 1)) {
-            ws[ref].s.font = { ...ws[ref].s.font, bold: true, sz: 11, color: { rgb: 'FFFFFF' } };
-            ws[ref].s.fill = { fgColor: { rgb: '064E3B' } };
-          }
+      aoa.push(emptyArr());
+
+      // ── Cuotas cobradas ──
+      let cuotasSubtitleR = -1;
+      let cuotasColHeaderR = -1;
+      if (cuotasData.length > 0) {
+        cuotasSubtitleR = aoa.length;
+        aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+        cuotasColHeaderR = aoa.length;
+        aoa.push([...colHeaders]);
+        cuotasData.forEach((c: any) => {
+          const row = emptyArr();
+          row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
+          row[1] = `${c.transaccion?.socio?.nombre} ${c.transaccion?.socio?.apellido}`;
+          row[2] = c.transaccion?.socio?.legajo ?? '';
+          row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0);
+          row[iMontoCobrado] = Number(c.monto);
+          row[nCols - 2] = `Cuota ${c.nro_cuota} - ${c.periodo?.nombre ?? ''}`;
+          row[nCols - 1] = 'cobrada';
+          moneyRows.push({ r: aoa.length, cols: [iMontoTotal, iMontoCobrado] });
+          aoa.push(row);
+        });
+      }
+
+      // ── Worksheet ──
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const totalRows = aoa.length;
+
+      // Estilos base
+      for (let R = 0; R < totalRows; ++R) {
+        for (let C = 0; C < nCols; ++C) {
+          const ref = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+          ws[ref].s = { font: { name: 'Calibri', sz: 10 }, alignment: { vertical: 'center' } };
         }
       }
-      ws['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }];
+
+      const applyRow = (r: number, s: any) => {
+        for (let C = 0; C < nCols; ++C) {
+          const ref = XLSX.utils.encode_cell({ r, c: C });
+          if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+          ws[ref].s = { ...ws[ref].s, ...s };
+        }
+      };
+
+      // Título prestador
+      applyRow(0, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } }, alignment: { horizontal: 'center', vertical: 'center' } });
+      // Período
+      applyRow(1, { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } } });
+      // Resumen verde claro
+      for (let R = summaryStartR; R <= summaryEndR; ++R) {
+        applyRow(R, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'D1FAE5' } } });
+      }
+      // RESUMEN DEL CIERRE y TOTAL COBRADO/LIQUIDAR en verde oscuro
+      applyRow(summaryStartR, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+      applyRow(summaryEndR, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+      // Subtítulos de sección azul claro
+      [ventasSubtitleR, cuotasSubtitleR].filter(r => r >= 0).forEach(r =>
+        applyRow(r, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1E3A5F' } }, fill: { fgColor: { rgb: 'DBEAFE' } } })
+      );
+      // Cabeceras de columna azul oscuro
+      [ventasColHeaderR, cuotasColHeaderR].filter(r => r >= 0).forEach(r =>
+        applyRow(r, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F4E79' } }, alignment: { horizontal: 'center', vertical: 'center' } })
+      );
+
+      // Formato moneda $
+      const moneyFmt = '"$"#,##0';
+      moneyRows.forEach(({ r, cols }) => {
+        cols.forEach(c => {
+          const ref = XLSX.utils.encode_cell({ r, c });
+          if (ws[ref] && typeof ws[ref].v === 'number') {
+            ws[ref].t = 'n';
+            ws[ref].z = moneyFmt;
+          }
+        });
+      });
+
+      // Anchos de columna
+      const colWidths = [{ wch: 22 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+      if (pctRecargo > 0) colWidths.push({ wch: 18 });
+      colWidths.push({ wch: 22 }, { wch: 12 });
+      ws['!cols'] = colWidths;
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Cierre');
       const desde = fechaDesde || 'inicio';
       const hasta = fechaHasta || 'hoy';
-      XLSX.writeFile(wb, `Cierre_${desde}_al_${hasta}.xlsx`);
-    } catch {
+      XLSX.writeFile(wb, `Cierre_${nombrePrestador}_${desde}_al_${hasta}.xlsx`);
+    } catch (e) {
+      console.error(e);
       alert('Error al exportar.');
     } finally {
       setExporting(false);
     }
   };
+
 
   // ── Cuotas cobradas ──
   const buildCuotasParams = useCallback(() => {
