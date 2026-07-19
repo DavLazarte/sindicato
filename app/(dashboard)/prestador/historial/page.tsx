@@ -10,7 +10,7 @@ function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-
 function formatDate(d: string) { return new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
 type EditModal = { open: true; t: Transaccion; newMonto: string; motivo: string } | { open: false };
-type AnulModal = { open: true; t: Transaccion; motivo: string } | { open: false };
+type AnulModal = { open: true; t: Transaccion; motivo: string; devolverSaldo: boolean } | { open: false };
 
 export default function PrestadorHistorial() {
   const [transacciones, setTransacciones] = useState<Transaccion[]>([]);
@@ -39,6 +39,9 @@ export default function PrestadorHistorial() {
   const [cuotasDesde, setCuotasDesde] = useState('');
   const [cuotasHasta, setCuotasHasta] = useState('');
   const [exportingCuotas, setExportingCuotas] = useState(false);
+
+  type AnulCuotaModal = { open: true; cuota: CuotaCobrada; motivo: string; nuevoEstado: 'pendiente'|'anulada'; devolverSaldo: boolean } | { open: false };
+  const [anulCuotaModal, setAnulCuotaModal] = useState<AnulCuotaModal>({ open: false });
 
   // ── Balance ──
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -74,9 +77,9 @@ export default function PrestadorHistorial() {
       const data: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
 
       // ── Detalle de transacciones ──
-      // Solo ventas directas (es_cuotas=false): las cuotas tienen su propio Excel en la pestaña "Cuotas cobradas"
-      // Incluirlas aquí generaría monto_cobrado incorrecto porque ese campo no filtra por fecha de cobro
-      const dataRows = data.filter(t => !t.es_cuotas).map(t => ({
+      // Solo ventas directas (es_cuotas=false) que NO estén anuladas
+      // Las cuotas tienen su propio Excel en la pestaña "Cuotas cobradas"
+      const dataRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada').map(t => ({
         Fecha: new Date(t.created_at).toLocaleString('es-AR'),
         Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
         Legajo: t.socio?.legajo,
@@ -287,17 +290,39 @@ export default function PrestadorHistorial() {
     }
   };
 
-  // ─── ANULAR ───────────────────────────────────────────────────
   const handleConfirmAnular = async () => {
     if (!anulModal.open) return;
     if (!anulModal.motivo.trim()) return alert('El motivo es obligatorio.');
     setSaving(true);
     try {
-      await api.post(`/prestador/transacciones/${anulModal.t.id}/anular`, { motivo_anulacion: anulModal.motivo });
+      await api.post(`/prestador/transacciones/${anulModal.t.id}/anular`, { 
+        motivo_anulacion: anulModal.motivo,
+        devolver_saldo: anulModal.devolverSaldo
+      });
       setAnulModal({ open: false });
       fetchData(page);
     } catch (err: any) {
       alert(err?.message || 'Error al anular.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── ANULAR CUOTA ─────────────────────────────────────────────
+  const handleConfirmAnularCuota = async () => {
+    if (!anulCuotaModal.open) return;
+    if (!anulCuotaModal.motivo.trim()) return alert('El motivo es obligatorio.');
+    setSaving(true);
+    try {
+      await api.post(`/prestador/cuotas/${anulCuotaModal.cuota.id}/anular`, {
+        motivo_anulacion: anulCuotaModal.motivo,
+        devolver_saldo: anulCuotaModal.devolverSaldo,
+        nuevo_estado: anulCuotaModal.nuevoEstado
+      });
+      setAnulCuotaModal({ open: false });
+      fetchCuotas(cuotasPage);
+    } catch (err: any) {
+      alert(err?.message || 'Error al anular cuota.');
     } finally {
       setSaving(false);
     }
@@ -364,13 +389,62 @@ export default function PrestadorHistorial() {
               value={anulModal.motivo}
               onChange={e => setAnulModal({ ...anulModal, motivo: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-red-400 mb-4 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-red-400 mb-3 resize-none"
               placeholder="Ej: El socio presentó receta con descuento del 40%..."
             />
+            
+            <div className="flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <input type="checkbox" id="devolverSaldoVenta" checked={anulModal.devolverSaldo} onChange={e => setAnulModal({ ...anulModal, devolverSaldo: e.target.checked })} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" />
+              <label htmlFor="devolverSaldoVenta" className="text-sm font-medium text-slate-700 select-none cursor-pointer">Devolver saldo al socio</label>
+            </div>
+
             <div className="flex gap-2">
               <button onClick={() => setAnulModal({ open: false })} className="flex-1 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
               <button onClick={handleConfirmAnular} disabled={saving} className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 disabled:opacity-50">
                 {saving ? 'Anulando...' : 'Anular venta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL ANULAR CUOTA ─── */}
+      {anulCuotaModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-black text-slate-800 mb-1">Anular cobro de cuota</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {anulCuotaModal.cuota.transaccion?.socio?.nombre} {anulCuotaModal.cuota.transaccion?.socio?.apellido} · Cuota {anulCuotaModal.cuota.nro_cuota} ({formatMoney(anulCuotaModal.cuota.monto)})
+            </p>
+
+            <label className="block text-xs font-bold text-slate-500 mb-1">¿Qué hacer con la cuota?</label>
+            <select
+              value={anulCuotaModal.nuevoEstado}
+              onChange={e => setAnulCuotaModal({ ...anulCuotaModal, nuevoEstado: e.target.value as 'pendiente' | 'anulada' })}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-red-400 mb-3"
+            >
+              <option value="pendiente">Volver a pendiente (se podrá cobrar después)</option>
+              <option value="anulada">Anular definitivamente (baja total)</option>
+            </select>
+
+            <label className="block text-xs font-bold text-slate-500 mb-1">Motivo <span className="text-red-500">*</span></label>
+            <textarea
+              value={anulCuotaModal.motivo}
+              onChange={e => setAnulCuotaModal({ ...anulCuotaModal, motivo: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-red-400 mb-3 resize-none"
+              placeholder="Ej: Cobro duplicado por error..."
+            />
+
+            <div className="flex items-center gap-2 mb-4 bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <input type="checkbox" id="devolverSaldoCuota" checked={anulCuotaModal.devolverSaldo} onChange={e => setAnulCuotaModal({ ...anulCuotaModal, devolverSaldo: e.target.checked })} className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" />
+              <label htmlFor="devolverSaldoCuota" className="text-sm font-medium text-slate-700 select-none cursor-pointer">Devolver saldo al socio</label>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setAnulCuotaModal({ open: false })} className="flex-1 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleConfirmAnularCuota} disabled={saving} className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 disabled:opacity-50">
+                {saving ? 'Procesando...' : 'Confirmar anulación'}
               </button>
             </div>
           </div>
@@ -469,7 +543,9 @@ export default function PrestadorHistorial() {
                             {!t.es_cuotas && !isManual && (
                               <button onClick={() => setEditModal({ open: true, t, newMonto: String(t.monto_total), motivo: '' })} className="text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">✏️ Editar monto</button>
                             )}
-                            <button onClick={() => setAnulModal({ open: true, t, motivo: '' })} className="text-xs font-bold px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition-colors">🗑 Anular</button>
+                            <button onClick={() => setAnulModal({ open: true, t, motivo: '', devolverSaldo: true })} className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold transition-colors">
+                              Anular
+                            </button>
                           </div>
                         )}
                         {isAnulada && t.motivo_anulacion && (
@@ -554,9 +630,12 @@ export default function PrestadorHistorial() {
                         <p className="text-xs text-slate-400">Legajo {c.transaccion?.socio?.legajo} · Cuota {c.nro_cuota} · {c.periodo?.nombre}</p>
                         <p className="text-xs text-slate-400">Fecha cobro: <span className="font-medium text-slate-600">{new Date(c.cobrada_en).toLocaleDateString('es-AR')}</span></p>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
                         <p className="text-sm font-black text-indigo-600">+{formatMoney(c.monto)}</p>
-                        <p className="text-[10px] text-slate-400">Venta: {formatMoney(c.transaccion?.monto_total)}</p>
+                        <p className="text-[10px] text-slate-400 mb-1">Venta: {formatMoney(c.transaccion?.monto_total)}</p>
+                        <button onClick={() => setAnulCuotaModal({ open: true, cuota: c, motivo: '', nuevoEstado: 'pendiente', devolverSaldo: true })} className="px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors">
+                          Anular pago
+                        </button>
                       </div>
                     </div>
                   ))}
