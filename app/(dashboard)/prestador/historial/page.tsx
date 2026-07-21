@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx-js-style';
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 function formatDate(d: string) { return new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
-type EditModal = { open: true; t: Transaccion; newMonto: string; motivo: string } | { open: false };
+type EditModal = { open: true; t: Transaccion; newMonto: string; newFecha: string; motivo: string } | { open: false };
 type AnulModal = { open: true; t: Transaccion; motivo: string; devolverSaldo: boolean } | { open: false };
 
 export default function PrestadorHistorial() {
@@ -376,6 +376,7 @@ export default function PrestadorHistorial() {
       await api.put(`/prestador/transacciones/${editModal.t.id}`, { 
         monto_total: nuevoMonto,
         motivo_edicion: editModal.motivo,
+        fecha_creacion: editModal.newFecha,
       });
       setEditModal({ open: false });
       fetchData(page);
@@ -432,18 +433,31 @@ export default function PrestadorHistorial() {
       {editModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-black text-slate-800 mb-1">Editar monto de venta</h3>
+            <h3 className="text-lg font-black text-slate-800 mb-1">Editar Venta</h3>
             <p className="text-sm text-slate-500 mb-4">
               {editModal.t.socio?.nombre} {editModal.t.socio?.apellido} · Monto actual: <strong>{formatMoney(editModal.t.monto_total)}</strong>
             </p>
-            <label className="block text-xs font-bold text-slate-500 mb-1">Nuevo monto</label>
-            <input
-              type="number"
-              value={editModal.newMonto}
-              onChange={e => setEditModal({ ...editModal, newMonto: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 mb-3"
-              placeholder="0"
-            />
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Nueva Fecha <span className="font-normal text-[10px]">(Opcional)</span></label>
+                <input
+                  type="datetime-local"
+                  value={editModal.newFecha}
+                  onChange={e => setEditModal({ ...editModal, newFecha: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Nuevo monto</label>
+                <input
+                  type="number"
+                  value={editModal.newMonto}
+                  onChange={e => setEditModal({ ...editModal, newMonto: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500"
+                  placeholder="0"
+                />
+              </div>
+            </div>
             {editModal.newMonto && parseFloat(editModal.newMonto) > 0 && parseFloat(editModal.newMonto) !== editModal.t.monto_total && (
               <div className={`text-xs rounded-xl px-3 py-2 mb-4 font-medium ${parseFloat(editModal.newMonto) < editModal.t.monto_total ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                 {parseFloat(editModal.newMonto) < editModal.t.monto_total
@@ -637,7 +651,7 @@ export default function PrestadorHistorial() {
                         {!isAnulada && (
                           <div className="flex gap-2 mt-3 ml-13">
                             {!t.es_cuotas && !isManual && (
-                              <button onClick={() => setEditModal({ open: true, t, newMonto: String(t.monto_total), motivo: '' })} className="text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">✏️ Editar monto</button>
+                              <button onClick={() => setEditModal({ open: true, t, newMonto: String(t.monto_total), newFecha: '', motivo: '' })} className="text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">✏️ Editar</button>
                             )}
                             <button onClick={() => setAnulModal({ open: true, t, motivo: '', devolverSaldo: true })} className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold transition-colors">
                               Anular
@@ -657,14 +671,35 @@ export default function PrestadorHistorial() {
                         {t.audit_logs && t.audit_logs.length > 0 && (
                           <div className="mt-3 ml-13 space-y-1.5">
                             {t.audit_logs.map((log: any) => {
-                              const antes = Number(log.valores_antes.monto_total || 0);
-                              const despues = Number(log.valores_despues.monto_total || 0);
-                              const dif = despues - antes;
+                              const antesMonto = Number(log.valores_antes.monto_total || 0);
+                              const despuesMonto = Number(log.valores_despues.monto_total || 0);
+                              const dif = despuesMonto - antesMonto;
+                              
+                              const antesFecha = log.valores_antes.created_at;
+                              const despuesFecha = log.valores_despues.created_at;
+                              const fechaCambiada = antesFecha && despuesFecha && antesFecha !== despuesFecha;
+                              
                               return (
-                                <p key={log.id} className="text-xs text-slate-500 flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg inline-flex">
-                                  <span className="text-sm">{dif < 0 ? '↘️' : '↗️'}</span>
-                                  <span>{dif < 0 ? 'Se devolvió' : 'Se agregó'} <strong>{formatMoney(Math.abs(dif))}</strong> al socio el {formatDate(log.created_at)}</span>
-                                </p>
+                                <div key={log.id} className="text-xs text-slate-500 flex flex-col gap-1 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                                  {dif !== 0 && (
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="text-sm">{dif < 0 ? '↘️' : '↗️'}</span>
+                                      <span>{dif < 0 ? 'Se devolvió' : 'Se agregó'} <strong>{formatMoney(Math.abs(dif))}</strong> al socio el {formatDate(log.created_at)}</span>
+                                    </p>
+                                  )}
+                                  {fechaCambiada && (
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="text-sm">📅</span>
+                                      <span>Se cambió la fecha del <strong>{formatDate(antesFecha)}</strong> al <strong>{formatDate(despuesFecha)}</strong></span>
+                                    </p>
+                                  )}
+                                  {dif === 0 && !fechaCambiada && (
+                                    <p className="flex items-center gap-1.5">
+                                      <span className="text-sm">📝</span>
+                                      <span>Venta editada el {formatDate(log.created_at)}</span>
+                                    </p>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
