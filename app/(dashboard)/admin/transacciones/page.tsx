@@ -175,26 +175,45 @@ export default function AdminTransacciones() {
       aoa.push(emptyArr());
 
       const ventasSubR = aoa.length;
+      let cuotasSubR = -1;
+      let cuotasColHdrR = -1;
+      
       if (agruparPorSocio) {
-        aoa.push(['▸ RESUMEN POR SOCIO - VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
-        const grpH = ['Socio', 'Legajo', 'Cant. Ventas', 'Total', ...(recargoPct > 0 ? [colLabel] : [])];
+        aoa.push(['▸ RESUMEN POR SOCIO (VENTAS DIRECTAS Y CUOTAS COBRADAS)', ...Array(nCols - 1).fill('')]);
+        const grpH = ['Socio', 'Legajo', 'Cant. Ventas', 'Ventas Directas', 'Cant. Cuotas', 'Cuotas Cobradas', 'Total Cobrado', ...(recargoPct > 0 ? [colLabel] : [])];
         var ventasColHdrR = aoa.length;
         aoa.push([...grpH, ...Array(Math.max(0, nCols - grpH.length)).fill('')]);
 
-        const sMap = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
+        const sMap = new Map<string, { nombre: string; legajo: string; cVentas: number; tVentas: number; cCuotas: number; tCuotas: number }>();
+        
         ventasDirectas.forEach(t => {
           const k = t.socio?.legajo ?? 'SIN';
           const ex = sMap.get(k);
-          if (ex) { ex.total += Number(t.monto_total); ex.count++; }
-          else sMap.set(k, { nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`, legajo: t.socio?.legajo ?? '', total: Number(t.monto_total), count: 1 });
+          if (ex) { ex.tVentas += Number(t.monto_total); ex.cVentas++; }
+          else sMap.set(k, { nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`, legajo: t.socio?.legajo ?? '', cVentas: 1, tVentas: Number(t.monto_total), cCuotas: 0, tCuotas: 0 });
         });
+        
+        pData.cuotas.forEach((c: any) => {
+          const k = c.transaccion?.socio?.legajo ?? 'SIN';
+          const ex = sMap.get(k);
+          if (ex) { ex.tCuotas += Number(c.monto); ex.cCuotas++; }
+          else sMap.set(k, { nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`, legajo: c.transaccion?.socio?.legajo ?? '', cVentas: 0, tVentas: 0, cCuotas: 1, tCuotas: Number(c.monto) });
+        });
+
         sMap.forEach(s => {
-          const row = emptyArr(); row[0] = s.nombre; row[1] = s.legajo; row[2] = s.count; row[3] = s.total;
-          const mCols = [3];
-          if (recargoPct > 0) { row[4] = Math.round(s.total * (1 + recargoPct / 100)); mCols.push(4); }
+          const total = s.tVentas + s.tCuotas;
+          const row = emptyArr(); 
+          row[0] = s.nombre; row[1] = s.legajo; 
+          row[2] = s.cVentas; row[3] = s.tVentas; 
+          row[4] = s.cCuotas; row[5] = s.tCuotas;
+          row[6] = total;
+          
+          const mCols = [3, 5, 6];
+          if (recargoPct > 0) { row[7] = Math.round(total * (1 + recargoPct / 100)); mCols.push(7); }
           moneyRows.push({ r: aoa.length, cols: mCols });
           aoa.push(row);
         });
+
       } else {
         aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
         var ventasColHdrR = aoa.length;
@@ -211,33 +230,10 @@ export default function AdminTransacciones() {
           moneyRows.push({ r: aoa.length, cols: mCols });
           aoa.push(row);
         });
-      }
-      aoa.push(emptyArr());
+        aoa.push(emptyArr());
 
-      let cuotasSubR = -1;
-      let cuotasColHdrR = -1;
-      if (pData.cuotas.length > 0) {
-        cuotasSubR = aoa.length;
-        if (agruparPorSocio) {
-          aoa.push(['▸ RESUMEN POR SOCIO - CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
-          cuotasColHdrR = aoa.length;
-          const grpHC = ['Socio', 'Legajo', 'Cant. Cuotas', 'Total Cobrado', ...(recargoPct > 0 ? [colLabel] : [])];
-          aoa.push([...grpHC, ...Array(Math.max(0, nCols - grpHC.length)).fill('')]);
-          const cMap = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
-          pData.cuotas.forEach((c: any) => {
-            const k = c.transaccion?.socio?.legajo ?? 'SIN';
-            const ex = cMap.get(k);
-            if (ex) { ex.total += Number(c.monto); ex.count++; }
-            else cMap.set(k, { nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`, legajo: c.transaccion?.socio?.legajo ?? '', total: Number(c.monto), count: 1 });
-          });
-          cMap.forEach(s => {
-            const row = emptyArr(); row[0] = s.nombre; row[1] = s.legajo; row[2] = s.count; row[3] = s.total;
-            const mCols = [3];
-            if (recargoPct > 0) { row[4] = Math.round(s.total * (1 + recargoPct / 100)); mCols.push(4); }
-            moneyRows.push({ r: aoa.length, cols: mCols });
-            aoa.push(row);
-          });
-        } else {
+        if (pData.cuotas.length > 0) {
+          cuotasSubR = aoa.length;
           aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
           cuotasColHdrR = aoa.length;
           aoa.push([...colHeaders]);
@@ -297,7 +293,7 @@ export default function AdminTransacciones() {
     rAoa.push(Array(rNcols).fill(''));
     
     const rHeaders = ['Negocio', 'Ventas Directas', 'Cuotas Cobradas', 'Total Cobrado'];
-    if (hasAnyRecargo) { rHeaders.push('Recargo %', 'Total a Liquidar'); }
+    if (hasAnyRecargo) { rHeaders.push('Actualización de precios', 'Total a Liquidar'); }
     rAoa.push(rHeaders);
 
     const rMoneyRows: { r: number; cols: number[] }[] = [];
