@@ -24,6 +24,7 @@ export default function PrestadorHistorial() {
   const [fechaHasta, setFechaHasta] = useState('');
   const [exporting, setExporting] = useState(false);
   const [recargo, setRecargo] = useState('');
+  const [agruparPorSocio, setAgruparPorSocio] = useState(false);
   const [editModal, setEditModal] = useState<EditModal>({ open: false });
   const [anulModal, setAnulModal] = useState<AnulModal>({ open: false });
   const [saving, setSaving] = useState(false);
@@ -144,25 +145,70 @@ export default function PrestadorHistorial() {
 
       // ── Ventas directas ──
       const ventasSubtitleR = aoa.length;
-      aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
-      const ventasColHeaderR = aoa.length;
-      aoa.push([...colHeaders]);
-
       const ventasRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada');
-      ventasRows.forEach(t => {
-        const row = emptyArr();
-        row[0] = new Date(t.created_at).toLocaleString('es-AR');
-        row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
-        row[2] = t.socio?.legajo ?? '';
-        row[iMontoTotal] = Number(t.monto_total);
-        row[iMontoCobrado] = Number(t.monto_cobrado);
-        if (pctRecargo > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + pctRecargo / 100));
-        row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago';
-        row[nCols - 1] = t.estado;
-        const mCols = [iMontoTotal, iMontoCobrado, ...(pctRecargo > 0 ? [iActualizado] : [])];
-        moneyRows.push({ r: aoa.length, cols: mCols });
-        aoa.push(row);
-      });
+
+      if (agruparPorSocio) {
+        // ── Agrupado por socio ──
+        aoa.push(['▸ RESUMEN POR SOCIO - VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+        const grpHeaders = ['Socio', 'Legajo', 'Cant. Ventas', 'Total', ...(pctRecargo > 0 ? [colLabel] : [])];
+        const ventasColHeaderR_grp = aoa.length;
+        aoa.push([...grpHeaders, ...Array(Math.max(0, nCols - grpHeaders.length)).fill('')]);
+
+        const socioMap = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
+        ventasRows.forEach(t => {
+          const key = t.socio?.legajo ?? 'SIN_LEGAJO';
+          const existing = socioMap.get(key);
+          if (existing) {
+            existing.total += Number(t.monto_total);
+            existing.count += 1;
+          } else {
+            socioMap.set(key, {
+              nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`,
+              legajo: t.socio?.legajo ?? '',
+              total: Number(t.monto_total),
+              count: 1,
+            });
+          }
+        });
+
+        socioMap.forEach(s => {
+          const row = emptyArr();
+          row[0] = s.nombre;
+          row[1] = s.legajo;
+          row[2] = s.count;
+          row[3] = s.total;
+          const mCols = [3];
+          if (pctRecargo > 0) {
+            row[4] = Math.round(s.total * (1 + pctRecargo / 100));
+            mCols.push(4);
+          }
+          moneyRows.push({ r: aoa.length, cols: mCols });
+          aoa.push(row);
+        });
+
+        // Reusar ventasColHeaderR para estilo
+        var ventasColHeaderR = ventasColHeaderR_grp;
+      } else {
+        // ── Detalle completo ──
+        aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+        var ventasColHeaderR = aoa.length;
+        aoa.push([...colHeaders]);
+
+        ventasRows.forEach(t => {
+          const row = emptyArr();
+          row[0] = new Date(t.created_at).toLocaleString('es-AR');
+          row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
+          row[2] = t.socio?.legajo ?? '';
+          row[iMontoTotal] = Number(t.monto_total);
+          row[iMontoCobrado] = Number(t.monto_cobrado);
+          if (pctRecargo > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + pctRecargo / 100));
+          row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago';
+          row[nCols - 1] = t.estado;
+          const mCols = [iMontoTotal, iMontoCobrado, ...(pctRecargo > 0 ? [iActualizado] : [])];
+          moneyRows.push({ r: aoa.length, cols: mCols });
+          aoa.push(row);
+        });
+      }
 
       aoa.push(emptyArr());
 
@@ -171,21 +217,61 @@ export default function PrestadorHistorial() {
       let cuotasColHeaderR = -1;
       if (cuotasData.length > 0) {
         cuotasSubtitleR = aoa.length;
-        aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
-        cuotasColHeaderR = aoa.length;
-        aoa.push([...colHeaders]);
-        cuotasData.forEach((c: any) => {
-          const row = emptyArr();
-          row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
-          row[1] = `${c.transaccion?.socio?.nombre} ${c.transaccion?.socio?.apellido}`;
-          row[2] = c.transaccion?.socio?.legajo ?? '';
-          row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0);
-          row[iMontoCobrado] = Number(c.monto);
-          row[nCols - 2] = `Cuota ${c.nro_cuota} - ${c.periodo?.nombre ?? ''}`;
-          row[nCols - 1] = 'cobrada';
-          moneyRows.push({ r: aoa.length, cols: [iMontoTotal, iMontoCobrado] });
-          aoa.push(row);
-        });
+
+        if (agruparPorSocio) {
+          aoa.push(['▸ RESUMEN POR SOCIO - CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+          const grpHeadersC = ['Socio', 'Legajo', 'Cant. Cuotas', 'Total Cobrado', ...(pctRecargo > 0 ? [colLabel] : [])];
+          cuotasColHeaderR = aoa.length;
+          aoa.push([...grpHeadersC, ...Array(Math.max(0, nCols - grpHeadersC.length)).fill('')]);
+
+          const socioMapC = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
+          cuotasData.forEach((c: any) => {
+            const key = c.transaccion?.socio?.legajo ?? 'SIN_LEGAJO';
+            const existing = socioMapC.get(key);
+            if (existing) {
+              existing.total += Number(c.monto);
+              existing.count += 1;
+            } else {
+              socioMapC.set(key, {
+                nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`,
+                legajo: c.transaccion?.socio?.legajo ?? '',
+                total: Number(c.monto),
+                count: 1,
+              });
+            }
+          });
+
+          socioMapC.forEach(s => {
+            const row = emptyArr();
+            row[0] = s.nombre;
+            row[1] = s.legajo;
+            row[2] = s.count;
+            row[3] = s.total;
+            const mCols = [3];
+            if (pctRecargo > 0) {
+              row[4] = Math.round(s.total * (1 + pctRecargo / 100));
+              mCols.push(4);
+            }
+            moneyRows.push({ r: aoa.length, cols: mCols });
+            aoa.push(row);
+          });
+        } else {
+          aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+          cuotasColHeaderR = aoa.length;
+          aoa.push([...colHeaders]);
+          cuotasData.forEach((c: any) => {
+            const row = emptyArr();
+            row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
+            row[1] = `${c.transaccion?.socio?.nombre} ${c.transaccion?.socio?.apellido}`;
+            row[2] = c.transaccion?.socio?.legajo ?? '';
+            row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0);
+            row[iMontoCobrado] = Number(c.monto);
+            row[nCols - 2] = `Cuota ${c.nro_cuota} - ${c.periodo?.nombre ?? ''}`;
+            row[nCols - 1] = 'cobrada';
+            moneyRows.push({ r: aoa.length, cols: [iMontoTotal, iMontoCobrado] });
+            aoa.push(row);
+          });
+        }
       }
 
       // ── Worksheet ──
@@ -589,6 +675,12 @@ export default function PrestadorHistorial() {
                     <span className="text-xs text-slate-500 font-medium whitespace-nowrap">+ Actualización %</span>
                     <input type="number" min="0" max="100" step="0.5" value={recargo} onChange={e => setRecargo(e.target.value)} placeholder="0" className="w-14 bg-transparent text-sm font-bold text-slate-700 outline-none text-right" />
                   </div>
+                  <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 cursor-pointer select-none">
+                    <div className={`relative w-9 h-5 rounded-full transition-colors ${agruparPorSocio ? 'bg-emerald-500' : 'bg-slate-300'}`} onClick={() => setAgruparPorSocio(!agruparPorSocio)}>
+                      <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${agruparPorSocio ? 'translate-x-4' : ''}`} />
+                    </div>
+                    <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Agrupar por socio</span>
+                  </label>
                   <button onClick={handleExportar} disabled={exporting} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-colors disabled:opacity-50 whitespace-nowrap">
                     {exporting ? 'Generando...' : '📊 Exportar Cierre'}
                   </button>

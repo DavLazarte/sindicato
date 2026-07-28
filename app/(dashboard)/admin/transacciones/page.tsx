@@ -24,12 +24,16 @@ export default function AdminTransacciones() {
   const [prestadores, setPrestadores] = useState<{id: number, nombre: string}[]>([]);
   const [exporting, setExporting] = useState(false);
   const [expandedTransaccion, setExpandedTransaccion] = useState<number | null>(null);
+  const [agruparPorSocio, setAgruparPorSocio] = useState(false);
 
   // ── Resumen por negocio ──
   const [resumenModal, setResumenModal] = useState(false);
   const [resumenDesde, setResumenDesde] = useState('');
   const [resumenHasta, setResumenHasta] = useState('');
-  const [resumenData, setResumenData] = useState<{nombre: string; totalVentas: number; totalCuotas: number; total: number}[]>([]);
+  const [resumenData, setResumenData] = useState<{id: number; nombre: string; totalVentas: number; totalCuotas: number; total: number}[]>([]);
+  const [resumenTxs, setResumenTxs] = useState<Transaccion[]>([]);
+  const [resumenCuotas, setResumenCuotas] = useState<any[]>([]);
+  const [recargosPorPrestador, setRecargosPorPrestador] = useState<Record<number, number>>({});
   const [resumenLoading, setResumenLoading] = useState(false);
   const [resumenExporting, setResumenExporting] = useState(false);
 
@@ -79,11 +83,275 @@ export default function AdminTransacciones() {
     }
   };
 
+  const generateMultiSheetExcel = (
+    allTx: Transaccion[],
+    allCuotas: any[],
+    fechaDesde: string,
+    fechaHasta: string,
+    recargosMap: Record<number, number>,
+    agruparPorSocio: boolean,
+    fileNamePrefix: string
+  ) => {
+    const periodoLabel = fechaDesde && fechaHasta
+      ? `${fechaDesde} al ${fechaHasta}`
+      : fechaDesde ? `Desde ${fechaDesde}` : fechaHasta ? `Hasta ${fechaHasta}` : 'Período completo';
+
+    const applyStyles = (ws: any, totalRows: number, nCols: number) => {
+      for (let R = 0; R < totalRows; ++R) {
+        for (let C = 0; C < nCols; ++C) {
+          const ref = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+          ws[ref].s = { font: { name: 'Calibri', sz: 10 }, alignment: { vertical: 'center' } };
+        }
+      }
+    };
+    const styleRow = (ws: any, r: number, nCols: number, s: any) => {
+      for (let C = 0; C < nCols; ++C) {
+        const ref = XLSX.utils.encode_cell({ r, c: C });
+        if (!ws[ref]) ws[ref] = { v: '', t: 's' };
+        ws[ref].s = { ...ws[ref].s, ...s };
+      }
+    };
+
+    const prestadorMap = new Map<number, { nombre: string; txs: Transaccion[]; cuotas: any[] }>();
+
+    allTx.forEach(t => {
+      const pid = t.prestador?.id ?? 0;
+      if (!prestadorMap.has(pid)) prestadorMap.set(pid, { nombre: t.prestador?.nombre ?? 'Sin nombre', txs: [], cuotas: [] });
+      prestadorMap.get(pid)!.txs.push(t);
+    });
+
+    allCuotas.filter((c: any) => c.estado === 'cobrada').forEach((c: any) => {
+      const pid = c.transaccion?.prestador?.id ?? 0;
+      const nombre = c.transaccion?.prestador?.nombre ?? 'Sin nombre';
+      if (!prestadorMap.has(pid)) prestadorMap.set(pid, { nombre, txs: [], cuotas: [] });
+      prestadorMap.get(pid)!.cuotas.push(c);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const resumenRows: { nombre: string; ventas: number; cuotas: number; total: number; recargoPct: number; actualizado: number }[] = [];
+
+    prestadorMap.forEach((pData, pid) => {
+      const recargoPct = recargosMap[pid] || 0;
+      const colLabel = recargoPct > 0 ? `Precio Act. +${recargoPct}%` : '';
+
+      const ventasDirectas = pData.txs.filter(t => !t.es_cuotas && t.estado !== 'anulada');
+      const totalVentas = ventasDirectas.reduce((a, t) => a + Number(t.monto_total), 0);
+      const totalCuotas = pData.cuotas.reduce((a, c) => a + Number(c.monto), 0);
+      const totalGeneral = totalVentas + totalCuotas;
+      const totalActualizado = totalGeneral * (1 + recargoPct / 100);
+
+      resumenRows.push({ nombre: pData.nombre, ventas: totalVentas, cuotas: totalCuotas, total: totalGeneral, recargoPct, actualizado: totalActualizado });
+
+      const colHeaders = ['Fecha', 'Socio', 'Legajo', 'Total Venta', 'Monto Cobrado', ...(recargoPct > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
+      const nCols = colHeaders.length;
+      const iMontoTotal = 3;
+      const iMontoCobrado = 4;
+      const iActualizado = recargoPct > 0 ? 5 : -1;
+
+      const emptyArr = () => Array(nCols).fill('');
+      const aoa: any[][] = [];
+      const moneyRows: { r: number; cols: number[] }[] = [];
+
+      aoa.push([`${pData.nombre.toUpperCase()}`, ...Array(nCols - 1).fill('')]);
+      aoa.push([`Período: ${periodoLabel}`, ...Array(nCols - 1).fill('')]);
+      aoa.push(emptyArr());
+
+      const summStart = aoa.length;
+      aoa.push(['RESUMEN', ...Array(nCols - 1).fill('')]);
+      const pushSum = (label: string, monto: number) => {
+        const row = emptyArr(); row[0] = label; row[iMontoCobrado] = monto;
+        moneyRows.push({ r: aoa.length, cols: [iMontoCobrado] });
+        aoa.push(row);
+      };
+      pushSum('Ventas directas', totalVentas);
+      pushSum('Cuotas cobradas', totalCuotas);
+      pushSum('TOTAL COBRADO', totalGeneral);
+      if (recargoPct > 0) {
+        pushSum(`Actualización de precios ${recargoPct}%`, Math.round(totalGeneral * (recargoPct / 100)));
+        pushSum('TOTAL A LIQUIDAR', Math.round(totalActualizado));
+      }
+      const summEnd = aoa.length - 1;
+      aoa.push(emptyArr());
+
+      const ventasSubR = aoa.length;
+      if (agruparPorSocio) {
+        aoa.push(['▸ RESUMEN POR SOCIO - VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+        const grpH = ['Socio', 'Legajo', 'Cant. Ventas', 'Total', ...(recargoPct > 0 ? [colLabel] : [])];
+        var ventasColHdrR = aoa.length;
+        aoa.push([...grpH, ...Array(Math.max(0, nCols - grpH.length)).fill('')]);
+
+        const sMap = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
+        ventasDirectas.forEach(t => {
+          const k = t.socio?.legajo ?? 'SIN';
+          const ex = sMap.get(k);
+          if (ex) { ex.total += Number(t.monto_total); ex.count++; }
+          else sMap.set(k, { nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`, legajo: t.socio?.legajo ?? '', total: Number(t.monto_total), count: 1 });
+        });
+        sMap.forEach(s => {
+          const row = emptyArr(); row[0] = s.nombre; row[1] = s.legajo; row[2] = s.count; row[3] = s.total;
+          const mCols = [3];
+          if (recargoPct > 0) { row[4] = Math.round(s.total * (1 + recargoPct / 100)); mCols.push(4); }
+          moneyRows.push({ r: aoa.length, cols: mCols });
+          aoa.push(row);
+        });
+      } else {
+        aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+        var ventasColHdrR = aoa.length;
+        aoa.push([...colHeaders]);
+        ventasDirectas.forEach(t => {
+          const row = emptyArr();
+          row[0] = new Date(t.created_at).toLocaleString('es-AR');
+          row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
+          row[2] = t.socio?.legajo ?? '';
+          row[iMontoTotal] = Number(t.monto_total); row[iMontoCobrado] = Number(t.monto_cobrado);
+          if (recargoPct > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + recargoPct / 100));
+          row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago'; row[nCols - 1] = t.estado;
+          const mCols = [iMontoTotal, iMontoCobrado, ...(recargoPct > 0 ? [iActualizado] : [])];
+          moneyRows.push({ r: aoa.length, cols: mCols });
+          aoa.push(row);
+        });
+      }
+      aoa.push(emptyArr());
+
+      let cuotasSubR = -1;
+      let cuotasColHdrR = -1;
+      if (pData.cuotas.length > 0) {
+        cuotasSubR = aoa.length;
+        if (agruparPorSocio) {
+          aoa.push(['▸ RESUMEN POR SOCIO - CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+          cuotasColHdrR = aoa.length;
+          const grpHC = ['Socio', 'Legajo', 'Cant. Cuotas', 'Total Cobrado', ...(recargoPct > 0 ? [colLabel] : [])];
+          aoa.push([...grpHC, ...Array(Math.max(0, nCols - grpHC.length)).fill('')]);
+          const cMap = new Map<string, { nombre: string; legajo: string; total: number; count: number }>();
+          pData.cuotas.forEach((c: any) => {
+            const k = c.transaccion?.socio?.legajo ?? 'SIN';
+            const ex = cMap.get(k);
+            if (ex) { ex.total += Number(c.monto); ex.count++; }
+            else cMap.set(k, { nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`, legajo: c.transaccion?.socio?.legajo ?? '', total: Number(c.monto), count: 1 });
+          });
+          cMap.forEach(s => {
+            const row = emptyArr(); row[0] = s.nombre; row[1] = s.legajo; row[2] = s.count; row[3] = s.total;
+            const mCols = [3];
+            if (recargoPct > 0) { row[4] = Math.round(s.total * (1 + recargoPct / 100)); mCols.push(4); }
+            moneyRows.push({ r: aoa.length, cols: mCols });
+            aoa.push(row);
+          });
+        } else {
+          aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+          cuotasColHdrR = aoa.length;
+          aoa.push([...colHeaders]);
+          pData.cuotas.forEach((c: any) => {
+            const row = emptyArr();
+            row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
+            row[1] = `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`;
+            row[2] = c.transaccion?.socio?.legajo ?? '';
+            row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0); row[iMontoCobrado] = Number(c.monto);
+            if (recargoPct > 0) row[iActualizado] = Math.round(Number(c.monto) * (1 + recargoPct / 100));
+            row[nCols - 2] = `Cuota ${c.nro_cuota}`; row[nCols - 1] = 'cobrada';
+            const mCols = [iMontoTotal, iMontoCobrado, ...(recargoPct > 0 ? [iActualizado] : [])];
+            moneyRows.push({ r: aoa.length, cols: mCols });
+            aoa.push(row);
+          });
+        }
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      applyStyles(ws, aoa.length, nCols);
+
+      styleRow(ws, 0, nCols, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } }, alignment: { horizontal: 'center', vertical: 'center' } });
+      styleRow(ws, 1, nCols, { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } } });
+      for (let R = summStart; R <= summEnd; ++R)
+        styleRow(ws, R, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'D1FAE5' } } });
+      styleRow(ws, summStart, nCols, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+      styleRow(ws, summEnd, nCols, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+      
+      [ventasSubR, cuotasSubR].filter(r => r >= 0).forEach(r =>
+        styleRow(ws, r, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1E3A5F' } }, fill: { fgColor: { rgb: 'DBEAFE' } } })
+      );
+      [ventasColHdrR, cuotasColHdrR].filter(r => r >= 0).forEach(r =>
+        styleRow(ws, r, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F4E79' } }, alignment: { horizontal: 'center', vertical: 'center' } })
+      );
+
+      moneyRows.forEach(({ r, cols }) => {
+        cols.forEach(c => {
+          const ref = XLSX.utils.encode_cell({ r, c });
+          if (ws[ref] && typeof ws[ref].v === 'number') { ws[ref].t = 'n'; ws[ref].z = '"$"#,##0'; }
+        });
+      });
+      const colWidths = [{ wch: 22 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+      if (recargoPct > 0) colWidths.push({ wch: 18 });
+      colWidths.push({ wch: 22 }, { wch: 12 });
+      ws['!cols'] = colWidths;
+
+      const sheetName = pData.nombre.replace(/[\\/*?:[\]]/g, '').slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    // ── Hoja RESUMEN GENERAL ──
+    const hasAnyRecargo = Object.values(recargosMap).some(r => r > 0);
+    const rNcols = hasAnyRecargo ? 6 : 4;
+    const rAoa: any[][] = [];
+    rAoa.push(['RESUMEN GENERAL POR NEGOCIO', ...Array(rNcols - 1).fill('')]);
+    rAoa.push([`Período: ${periodoLabel}`, ...Array(rNcols - 1).fill('')]);
+    rAoa.push(Array(rNcols).fill(''));
+    
+    const rHeaders = ['Negocio', 'Ventas Directas', 'Cuotas Cobradas', 'Total Cobrado'];
+    if (hasAnyRecargo) { rHeaders.push('Recargo %', 'Total a Liquidar'); }
+    rAoa.push(rHeaders);
+
+    const rMoneyRows: { r: number; cols: number[] }[] = [];
+    resumenRows.sort((a, b) => b.total - a.total).forEach(r => {
+      const row = [r.nombre, r.ventas, r.cuotas, r.total];
+      const mCols = [1, 2, 3];
+      if (hasAnyRecargo) { row.push(`${r.recargoPct}%`); row.push(Math.round(r.actualizado)); mCols.push(5); }
+      rMoneyRows.push({ r: rAoa.length, cols: mCols });
+      rAoa.push(row);
+    });
+
+    const totV = resumenRows.reduce((a, r) => a + r.ventas, 0);
+    const totC = resumenRows.reduce((a, r) => a + r.cuotas, 0);
+    const totG = totV + totC;
+    const totAct = resumenRows.reduce((a, r) => a + r.actualizado, 0);
+    
+    const lastRow = ['TOTAL GENERAL', totV, totC, totG];
+    const lastMcols = [1, 2, 3];
+    if (hasAnyRecargo) { lastRow.push(''); lastRow.push(Math.round(totAct)); lastMcols.push(5); }
+    
+    rMoneyRows.push({ r: rAoa.length, cols: lastMcols });
+    rAoa.push(lastRow);
+
+    const wsR = XLSX.utils.aoa_to_sheet(rAoa);
+    applyStyles(wsR, rAoa.length, rNcols);
+    styleRow(wsR, 0, rNcols, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } }, alignment: { horizontal: 'center', vertical: 'center' } });
+    styleRow(wsR, 1, rNcols, { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } } });
+    styleRow(wsR, 3, rNcols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F4E79' } }, alignment: { horizontal: 'center', vertical: 'center' } });
+    styleRow(wsR, rAoa.length - 1, rNcols, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+    rMoneyRows.forEach(({ r, cols }) => {
+      cols.forEach(c => {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (wsR[ref] && typeof wsR[ref].v === 'number') { wsR[ref].t = 'n'; wsR[ref].z = '"$"#,##0'; }
+      });
+    });
+    const rwColWidths = [{ wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+    if (hasAnyRecargo) { rwColWidths.push({ wch: 12 }, { wch: 18 }); }
+    wsR['!cols'] = rwColWidths;
+
+    XLSX.utils.book_append_sheet(wb, wsR, 'Resumen General');
+    const sheetNames = wb.SheetNames;
+    const last = sheetNames.pop()!;
+    sheetNames.unshift(last);
+    wb.SheetNames = sheetNames;
+
+    const desde = fechaDesde || 'inicio';
+    const hasta = fechaHasta || 'hoy';
+    XLSX.writeFile(wb, `${fileNamePrefix}_${desde}_al_${hasta}.xlsx`);
+  };
+
   const handleExportar = async () => {
     setExporting(true);
     try {
-      const params = new URLSearchParams();
-      params.append('unpaginated', '1');
+      const params = new URLSearchParams({ unpaginated: '1' });
       if (search) params.append('search', search);
       if (periodoId) params.append('periodo_id', periodoId);
       if (prestadorId) params.append('prestador_id', prestadorId);
@@ -91,101 +359,38 @@ export default function AdminTransacciones() {
       if (fechaHasta) params.append('fecha_hasta', fechaHasta);
       if (estado) params.append('estado', estado);
 
-      const res = await api.get<ApiResponse<any>>(`/admin/transacciones?${params.toString()}`);
-      const data: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
-      
-      const rows = data.map(t => ({
-        Fecha: new Date(t.created_at).toLocaleString('es-AR'),
-        Socio: `${t.socio?.nombre} ${t.socio?.apellido}`,
-        Legajo: t.socio?.legajo,
-        Negocio: t.prestador?.nombre,
-        "Total Venta": t.monto_total,
-        "Monto Cobrado": t.monto_cobrado,
-        Cuotas: t.es_cuotas ? 'Sí' : 'No',
-        Estado: t.estado,
-      }));
+      const [resTx, resCuotas] = await Promise.all([
+        api.get<ApiResponse<any>>(`/admin/transacciones?${params.toString()}`),
+        api.get<ApiResponse<any>>(`/admin/cuotas?unpaginated=true${fechaDesde ? `&fecha_desde=${fechaDesde}` : ''}${fechaHasta ? `&fecha_hasta=${fechaHasta}` : ''}`),
+      ]);
+      const allTx: Transaccion[] = Array.isArray(resTx.data) ? resTx.data : resTx.data.data || [];
+      const allCuotas: any[] = Array.isArray(resCuotas.data) ? resCuotas.data : resCuotas.data.data || [];
 
-      const totalVenta = data.reduce((acc, t) => t.estado === 'confirmada' ? acc + Number(t.monto_total) : acc, 0);
-      const totalCobrado = data.reduce((acc, t) => t.estado === 'confirmada' ? acc + Number(t.monto_cobrado) : acc, 0);
-      
-      rows.push({
-        Fecha: '', Socio: '', Legajo: '', Negocio: '', "Total Venta": totalVenta, "Monto Cobrado": totalCobrado, Cuotas: 'TOTAL CONFIRMADAS', Estado: '' as any
-      });
-
-      const ws = XLSX.utils.json_to_sheet(rows);
-      
-      // Aplicar estilos con xlsx-js-style
-      const range = XLSX.utils.decode_range(ws['!ref'] || "A1:G1");
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const cellAddress = { c: C, r: R };
-          const cellRef = XLSX.utils.encode_cell(cellAddress);
-          if (!ws[cellRef]) continue;
-          
-          ws[cellRef].s = {
-            font: { name: "Arial", sz: 10 },
-            alignment: { vertical: "center" }
-          };
-
-          // Formato Encabezados
-          if (R === 0) {
-            ws[cellRef].s.font.bold = true;
-            ws[cellRef].s.font.color = { rgb: "FFFFFF" };
-            ws[cellRef].s.fill = { fgColor: { rgb: "475569" } }; // slate-600
-            ws[cellRef].s.alignment = { horizontal: "center", vertical: "center" };
-          }
-          
-          // Formato Fila Total
-          if (R === range.e.r) {
-            ws[cellRef].s.font.bold = true;
-            ws[cellRef].s.fill = { fgColor: { rgb: "D1FAE5" } }; // emerald-100
-            if (C === 4 || C === 5) {
-              ws[cellRef].s.font.color = { rgb: "065F46" }; // emerald-800
-            }
-          }
-        }
-      }
-
-      // Ancho de columnas
-      ws['!cols'] = [
-        { wch: 18 }, // Fecha
-        { wch: 30 }, // Socio
-        { wch: 10 }, // Legajo
-        { wch: 30 }, // Negocio
-        { wch: 15 }, // Total Venta
-        { wch: 15 }, // Monto Cobrado
-        { wch: 20 }, // Cuotas / Texto TOTAL
-        { wch: 15 }, // Estado
-      ];
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Ventas");
-      XLSX.writeFile(wb, "Reporte_Ventas.xlsx");
-
+      generateMultiSheetExcel(allTx, allCuotas, fechaDesde, fechaHasta, {}, agruparPorSocio, 'Reporte_General');
     } catch (err) {
+      console.error(err);
       alert("Error al exportar los datos.");
     } finally {
       setExporting(false);
     }
   };
 
+
   // ── Resumen por negocio ──
   const handleBuildResumen = async () => {
     if (!resumenDesde || !resumenHasta) return alert('Ingresá las dos fechas.');
     setResumenLoading(true);
     try {
-      // Traer todas las transacciones del rango
       const params = new URLSearchParams({ unpaginated: '1', fecha_desde: resumenDesde, fecha_hasta: resumenHasta });
       const res = await api.get<ApiResponse<any>>(`/admin/transacciones?${params.toString()}`);
       const txData: Transaccion[] = Array.isArray(res.data) ? res.data : res.data.data || [];
 
-      // Traer cuotas cobradas del rango
       const cuotasRes = await api.get<ApiResponse<any>>(`/admin/cuotas?unpaginated=true&fecha_desde=${resumenDesde}&fecha_hasta=${resumenHasta}`);
       const cuotasData: any[] = Array.isArray(cuotasRes.data) ? cuotasRes.data : cuotasRes.data.data || [];
 
-      // Agrupar ventas por negocio
-      // Solo pagos directos (es_cuotas=false) en totalVentas
-      // Las cuotas cobradas vienen del endpoint de cuotas (totalCuotas)
+      setResumenTxs(txData);
+      setResumenCuotas(cuotasData);
+
       const mapa: Record<number, { nombre: string; totalVentas: number; totalCuotas: number }> = {};
 
       txData.filter(t => t.estado === 'confirmada' && !t.es_cuotas).forEach(t => {
@@ -201,11 +406,12 @@ export default function AdminTransacciones() {
         mapa[pid].totalCuotas += Number(c.monto);
       });
 
-      const rows = Object.values(mapa)
-        .map(r => ({ ...r, total: r.totalVentas + r.totalCuotas }))
+      const rows = Object.entries(mapa)
+        .map(([id, r]) => ({ id: Number(id), ...r, total: r.totalVentas + r.totalCuotas }))
         .sort((a, b) => b.total - a.total);
 
       setResumenData(rows);
+      setRecargosPorPrestador({});
     } catch {
       alert('Error al generar el resumen.');
     } finally {
@@ -217,35 +423,10 @@ export default function AdminTransacciones() {
     if (resumenData.length === 0) return;
     setResumenExporting(true);
     try {
-      const totVentas = resumenData.reduce((a, r) => a + r.totalVentas, 0);
-      const totCuotas = resumenData.reduce((a, r) => a + r.totalCuotas, 0);
-      const totGeneral = totVentas + totCuotas;
-
-      const rows = [
-        ...resumenData.map(r => ({
-          'Negocio': r.nombre,
-          'Total Ventas': r.totalVentas,
-          'Total Cobros Cuotas': r.totalCuotas,
-          'Total General': r.total,
-        })),
-        { 'Negocio': 'TOTAL', 'Total Ventas': totVentas, 'Total Cobros Cuotas': totCuotas, 'Total General': totGeneral },
-      ];
-
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:D1');
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const ref = XLSX.utils.encode_cell({ c: C, r: R });
-          if (!ws[ref]) continue;
-          ws[ref].s = { font: { name: 'Arial', sz: 10 }, alignment: { vertical: 'center' } };
-          if (R === 0) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: 'FFFFFF' } }; ws[ref].s.fill = { fgColor: { rgb: '475569' } }; ws[ref].s.alignment = { horizontal: 'center', vertical: 'center' }; }
-          if (R === range.e.r) { ws[ref].s.font = { ...ws[ref].s.font, bold: true, color: { rgb: '065F46' } }; ws[ref].s.fill = { fgColor: { rgb: 'D1FAE5' } }; }
-        }
-      }
-      ws['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 18 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Resumen por Negocio');
-      XLSX.writeFile(wb, `Resumen_${resumenDesde}_al_${resumenHasta}.xlsx`);
+      generateMultiSheetExcel(resumenTxs, resumenCuotas, resumenDesde, resumenHasta, recargosPorPrestador, agruparPorSocio, 'Liquidacion_Negocios');
+    } catch (e) {
+      console.error(e);
+      alert('Error al exportar el resumen.');
     } finally {
       setResumenExporting(false);
     }
@@ -298,25 +479,44 @@ export default function AdminTransacciones() {
                         <th className="text-left px-5 py-3 font-bold text-slate-600">Negocio</th>
                         <th className="text-right px-5 py-3 font-bold text-slate-600">Ventas</th>
                         <th className="text-right px-5 py-3 font-bold text-slate-600">Cuotas</th>
-                        <th className="text-right px-5 py-3 font-bold text-slate-600">Total</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Subtotal</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Act. %</th>
+                        <th className="text-right px-5 py-3 font-bold text-slate-600">Total Liquidar</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {resumenData.map((r, i) => (
-                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-5 py-3 font-medium text-slate-700">{r.nombre}</td>
-                          <td className="px-5 py-3 text-right text-slate-500">{r.totalVentas > 0 ? formatMoney(r.totalVentas) : <span className="text-slate-300">-</span>}</td>
-                          <td className="px-5 py-3 text-right text-slate-500">{r.totalCuotas > 0 ? formatMoney(r.totalCuotas) : <span className="text-slate-300">-</span>}</td>
-                          <td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(r.total)}</td>
-                        </tr>
-                      ))}
+                      {resumenData.map((r, i) => {
+                        const recargo = recargosPorPrestador[r.id] || 0;
+                        const actualizado = r.total * (1 + recargo / 100);
+                        return (
+                          <tr key={i} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-5 py-3 font-medium text-slate-700">{r.nombre}</td>
+                            <td className="px-5 py-3 text-right text-slate-500">{r.totalVentas > 0 ? formatMoney(r.totalVentas) : <span className="text-slate-300">-</span>}</td>
+                            <td className="px-5 py-3 text-right text-slate-500">{r.totalCuotas > 0 ? formatMoney(r.totalCuotas) : <span className="text-slate-300">-</span>}</td>
+                            <td className="px-5 py-3 text-right font-bold text-slate-700">{formatMoney(r.total)}</td>
+                            <td className="px-5 py-2 text-right">
+                              <input
+                                type="number"
+                                min="0" max="100" step="0.5"
+                                value={recargosPorPrestador[r.id] || ''}
+                                onChange={e => setRecargosPorPrestador({ ...recargosPorPrestador, [r.id]: Number(e.target.value) })}
+                                placeholder="0"
+                                className="w-16 px-2 py-1 text-right text-sm font-bold text-emerald-600 bg-white border border-slate-200 rounded-lg outline-none focus:border-emerald-500"
+                              />
+                            </td>
+                            <td className="px-5 py-3 text-right font-black text-emerald-700">{formatMoney(actualizado)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="bg-emerald-50 border-t-2 border-emerald-200">
                         <td className="px-5 py-3 font-black text-emerald-800">TOTAL GENERAL</td>
                         <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.totalVentas, 0))}</td>
                         <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.totalCuotas, 0))}</td>
-                        <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + r.total, 0))}</td>
+                        <td className="px-5 py-3 text-right font-black text-slate-700">{formatMoney(resumenData.reduce((a, r) => a + r.total, 0))}</td>
+                        <td className="px-5 py-3"></td>
+                        <td className="px-5 py-3 text-right font-black text-emerald-800">{formatMoney(resumenData.reduce((a, r) => a + (r.total * (1 + (recargosPorPrestador[r.id] || 0) / 100)), 0))}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -343,7 +543,13 @@ export default function AdminTransacciones() {
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-6">
           <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
             <h2 className="text-lg font-black text-slate-800">Filtros y Exportación</h2>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
+              <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 cursor-pointer select-none">
+                <div className={`relative w-9 h-5 rounded-full transition-colors ${agruparPorSocio ? 'bg-emerald-500' : 'bg-slate-300'}`} onClick={() => setAgruparPorSocio(!agruparPorSocio)}>
+                  <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${agruparPorSocio ? 'translate-x-4' : ''}`} />
+                </div>
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Agrupar por socio</span>
+              </label>
               <button
                 onClick={() => setResumenModal(true)}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-sm transition-colors"
