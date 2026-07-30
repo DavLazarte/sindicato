@@ -24,6 +24,7 @@ export interface Socio {
   saldo_anterior: number;
   created_at: string;
   updated_at: string;
+  prestamos?: Prestamo[];
 }
 
 export interface Prestador {
@@ -201,4 +202,11 @@ export interface DashboardAdmin {
   transacciones_mes_monto: number;
   prestamos_vigentes: number;
   ultimas_acreditaciones?: Acreditacion[];
+}
+
+export interface ReporteFinancieraRow {
+  legajo: string;
+  nombre_completo: string;
+  total_a_descontar: number;
+  detalle: string;
 }

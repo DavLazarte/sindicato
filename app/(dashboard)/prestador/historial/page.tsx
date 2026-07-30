@@ -145,9 +145,9 @@ export default function PrestadorHistorial() {
 
       // ── Ventas directas ──
       const ventasSubtitleR = aoa.length;
-      const ventasRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada');
 
       if (agruparPorSocio) {
+        const ventasRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada');
         // ── Agrupado por socio ──
         aoa.push(['▸ RESUMEN POR SOCIO - VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
         const grpHeaders = ['Socio', 'Legajo', 'Cant. Ventas', 'Total', ...(pctRecargo > 0 ? [colLabel] : [])];
@@ -190,19 +190,36 @@ export default function PrestadorHistorial() {
         var ventasColHeaderR = ventasColHeaderR_grp;
       } else {
         // ── Detalle completo ──
-        aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
+        const todasVentasRows = data
+          .filter(t => t.estado !== 'anulada' && t.tipo !== 'manual')
+          .sort((a, b) => {
+            const legA = parseInt(a.socio?.legajo || '0', 10);
+            const legB = parseInt(b.socio?.legajo || '0', 10);
+            return legA - legB;
+          });
+          
+        aoa.push(['▸ DETALLE DE VENTAS (DIRECTAS Y EN CUOTAS)', ...Array(nCols - 1).fill('')]);
         var ventasColHeaderR = aoa.length;
         aoa.push([...colHeaders]);
 
-        ventasRows.forEach(t => {
+        todasVentasRows.forEach(t => {
           const row = emptyArr();
-          row[0] = new Date(t.created_at).toLocaleString('es-AR');
+          row[0] = new Date(t.created_at).toLocaleString('es-AR', { day: 'numeric', month: 'numeric', year: 'numeric' });
           row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
           row[2] = t.socio?.legajo ?? '';
           row[iMontoTotal] = Number(t.monto_total);
-          row[iMontoCobrado] = Number(t.monto_cobrado);
+          
+          if (t.es_cuotas) {
+            row[iMontoCobrado] = 0;
+            const primeraCuota = t.cuotas?.slice().sort((a: any, b: any) => a.nro_cuota - b.nro_cuota)[0];
+            const mesSig = primeraCuota?.periodo?.nombre || 'Pendiente';
+            row[nCols - 2] = `Cuota 1 - ${mesSig}`;
+          } else {
+            row[iMontoCobrado] = Number(t.monto_cobrado);
+            row[nCols - 2] = '1 Pago';
+          }
+          
           if (pctRecargo > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + pctRecargo / 100));
-          row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago';
           row[nCols - 1] = t.estado;
           const mCols = [iMontoTotal, iMontoCobrado, ...(pctRecargo > 0 ? [iActualizado] : [])];
           moneyRows.push({ r: aoa.length, cols: mCols });

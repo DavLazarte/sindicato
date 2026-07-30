@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { TopBar } from '@/components/layout/Navigation';
-import type { ApiResponse, PaginatedData, Socio, Prestamo } from '@/lib/types';
+import * as XLSX from 'xlsx-js-style';
+import type { ApiResponse, PaginatedData, Socio, Prestamo, Periodo, ReporteFinancieraRow } from '@/lib/types';
 
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 function formatDate(date: string) { return new Date(date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -28,6 +29,18 @@ export default function AdminFinanciera() {
   const [estadoFiltro, setEstadoFiltro] = useState(''); // '' | 'vigente' | 'finalizado' | 'cancelado'
   const [cargandoLista, setCargandoLista] = useState(true);
 
+  // === ESTADO MODAL COBRO MASIVO ===
+  const [showModalCobro, setShowModalCobro] = useState(false);
+  const [periodoCobro, setPeriodoCobro] = useState<number | ''>('');
+  const [cobrandoMasivo, setCobrandoMasivo] = useState(false);
+
+  // === ESTADO MODAL REPORTE ===
+  const [showModalReporte, setShowModalReporte] = useState(false);
+  const [periodos, setPeriodos] = useState<Periodo[]>([]);
+  const [periodoSeleccionado, setPeriodoSeleccionado] = useState<number | ''>('');
+  const [reporteData, setReporteData] = useState<ReporteFinancieraRow[]>([]);
+  const [cargandoReporte, setCargandoReporte] = useState(false);
+
   // === CARGA DE LISTA ===
   const fetchPrestamos = useCallback((p: number) => {
     setCargandoLista(true);
@@ -48,6 +61,16 @@ export default function AdminFinanciera() {
     const timer = setTimeout(() => fetchPrestamos(1), 400);
     return () => clearTimeout(timer);
   }, [searchLista, estadoFiltro, fetchPrestamos]);
+
+  // Cargar periodos para el modal
+  useEffect(() => {
+    api.get<ApiResponse<Periodo[]>>('/admin/periodos').then(res => {
+      setPeriodos(res.data);
+      if (res.data.length > 0) {
+        setPeriodoSeleccionado(res.data[0].id);
+      }
+    });
+  }, []);
 
   // === BÚSQUEDA SOCIO ===
   useEffect(() => {
@@ -109,6 +132,23 @@ export default function AdminFinanciera() {
     }
   };
 
+  const handleCobroMasivo = async () => {
+    if (!periodoCobro) return;
+    if (!confirm('¿Estás seguro de marcar TODAS las cuotas PENDIENTES de este período como PAGADAS?')) return;
+    
+    try {
+      setCobrandoMasivo(true);
+      const res = await api.post<ApiResponse<{message: string}>>(`/admin/prestamos/cuotas/cobrar-masivo`, { periodo_id: periodoCobro });
+      alert('✅ ' + (res.data.message || 'Cuotas cobradas correctamente.'));
+      setShowModalCobro(false);
+      fetchPrestamos(page);
+    } catch (err: unknown) {
+      alert('Error al cobrar masivamente: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setCobrandoMasivo(false);
+    }
+  };
+
   const handleCancelarPrestamo = async (id: number) => {
     if (!confirm('¿Estás seguro de cancelar este préstamo? Las cuotas pendientes serán anuladas.')) return;
     try {
@@ -117,6 +157,143 @@ export default function AdminFinanciera() {
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Error al cancelar préstamo');
     }
+  };
+
+  // === REPORTE EXCEL ===
+  const cargarReporte = async () => {
+    if (!periodoSeleccionado) return;
+    setCargandoReporte(true);
+    try {
+      const res = await api.get<ApiResponse<ReporteFinancieraRow[]>>(`/admin/prestamos/reporte?periodo_id=${periodoSeleccionado}`);
+      setReporteData(res.data);
+    } catch (err: unknown) {
+      alert('Error al generar el reporte: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setCargandoReporte(false);
+    }
+  };
+
+  const descargarExcel = () => {
+    if (reporteData.length === 0) return alert('No hay datos para exportar');
+    
+    const periodoNombre = periodos.find(p => p.id === periodoSeleccionado)?.nombre || '';
+    
+    // Calcular total general
+    const sumTotal = reporteData.reduce((acc, row) => acc + row.total_a_descontar, 0);
+
+    // Preparar detalles separados
+    let maxDetalles = 0;
+    const parsedData = reporteData.map(row => {
+      const detalles = row.detalle ? row.detalle.split(' | ') : [];
+      if (detalles.length > maxDetalles) maxDetalles = detalles.length;
+      return { ...row, detallesArray: detalles };
+    });
+
+    // Construir matriz de datos (Array de Arrays)
+    const aoa: any[][] = [];
+    
+    // Fila 0: Titulo
+    aoa.push([`REPORTE DE PRÉSTAMOS - ${periodoNombre}`]);
+    
+    // Fila 1: Total General
+    aoa.push(['TOTAL GENERAL A DESCONTAR:', sumTotal]);
+    
+    // Fila 2: Espacio
+    aoa.push([]);
+
+    // Fila 3: Cabeceras
+    const headers = ['Legajo', 'Socio', 'Total a Descontar'];
+    for (let i = 0; i < maxDetalles; i++) headers.push(`Detalle Cuota ${i+1}`);
+    aoa.push(headers);
+
+    // Fila 4+: Datos
+    parsedData.forEach(row => {
+      const rowData = [row.legajo, row.nombre_completo, row.total_a_descontar, ...row.detallesArray];
+      aoa.push(rowData);
+    });
+
+    // Crear libro y hoja
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Formateo / Estilos
+    const range = XLSX.utils.decode_range(ws['!ref'] || "A1:A1");
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = { c: C, r: R };
+        const cellRef = XLSX.utils.encode_cell(cellAddress);
+        if (!ws[cellRef]) continue;
+
+        ws[cellRef].s = {
+          font: { name: "Arial", sz: 10 },
+          alignment: { vertical: "center" }
+        };
+
+        // Fila 0: Título principal
+        if (R === 0 && C === 0) {
+          ws[cellRef].s.font = { name: "Arial", sz: 14, bold: true, color: { rgb: "1E293B" } };
+          ws[cellRef].s.alignment = { horizontal: "left", vertical: "center" };
+        }
+
+        // Fila 1: Total General
+        if (R === 1) {
+          ws[cellRef].s.font = { name: "Arial", sz: 12, bold: true };
+          if (C === 1) {
+             ws[cellRef].s.font.color = { rgb: "047857" }; // Verde
+             ws[cellRef].z = '"$"#,##0.00'; // Formato moneda
+          }
+        }
+
+        // Fila 3: Cabeceras de tabla
+        if (R === 3) {
+          ws[cellRef].s.font.bold = true;
+          ws[cellRef].s.font.color = { rgb: "FFFFFF" };
+          ws[cellRef].s.fill = { fgColor: { rgb: "334155" } }; // Pizarra
+          ws[cellRef].s.alignment = { horizontal: "center", vertical: "center" };
+        }
+
+        // Filas de Datos
+        if (R >= 4) {
+          // Columna 2: Total a Descontar
+          if (C === 2) {
+             ws[cellRef].s.font.bold = true;
+             ws[cellRef].z = '"$"#,##0.00';
+          }
+          // Columnas >= 3: Detalles (Celdas pintadas de verde)
+          if (C >= 3 && ws[cellRef].v) {
+             ws[cellRef].s.fill = { fgColor: { rgb: "D1FAE5" } }; // Verde claro
+             ws[cellRef].s.font.color = { rgb: "065F46" }; // Verde oscuro
+             ws[cellRef].s.font.bold = true;
+             ws[cellRef].s.alignment = { horizontal: "center", vertical: "center" };
+             ws[cellRef].s.border = {
+                top: { style: 'thin', color: { rgb: 'A7F3D0' } },
+                bottom: { style: 'thin', color: { rgb: 'A7F3D0' } },
+                left: { style: 'thin', color: { rgb: 'A7F3D0' } },
+                right: { style: 'thin', color: { rgb: 'A7F3D0' } }
+             };
+          }
+        }
+      }
+    }
+
+    // Unir celdas para Título y alinear columnas
+    if (!ws['!merges']) ws['!merges'] = [];
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }); // Título ocupa todo
+    ws['!merges'].push({ s: { r: 1, c: 1 }, e: { r: 1, c: 2 } }); // Total se expande un poco
+
+    // Ajustar anchos
+    const wscols = [
+      {wch: 12}, // Legajo
+      {wch: 40}, // Socio
+      {wch: 20}, // Total
+    ];
+    for (let i = 0; i < maxDetalles; i++) {
+      wscols.push({wch: 35}); // Cada cuota ocupa su propia celda ancha
+    }
+    ws['!cols'] = wscols;
+
+    XLSX.utils.book_append_sheet(wb, ws, "Reporte Financiera");
+    XLSX.writeFile(wb, `Reporte_Prestamos_${periodoNombre || periodoSeleccionado}.xlsx`);
   };
 
   return (
@@ -192,7 +369,7 @@ export default function AdminFinanciera() {
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cuotas</label>
                 <div className="flex gap-2">
-                  {[1, 2, 3].map(n => (
+                  {[1, 2, 3, 4, 5, 6].map(n => (
                     <button 
                       key={n}
                       onClick={() => setCantidadCuotas(n)}
@@ -234,9 +411,9 @@ export default function AdminFinanciera() {
 
           {/* PANEL DERECHO: LISTA */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 md:p-6 min-h-[600px]">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <h2 className="text-lg font-black text-slate-800">Préstamos Registrados</h2>
-              <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
+              <h2 className="text-lg font-black text-slate-800">Listado de Préstamos</h2>
+              <div className="flex flex-wrap items-center gap-3">
                 <input 
                   type="text" 
                   value={searchLista} 
@@ -247,100 +424,112 @@ export default function AdminFinanciera() {
                 <select 
                   value={estadoFiltro} 
                   onChange={(e) => setEstadoFiltro(e.target.value)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 text-slate-700 w-full sm:w-auto"
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 text-slate-700 w-full sm:w-36"
                 >
-                  <option value="">Todos los estados</option>
+                  <option value="">Todos</option>
                   <option value="vigente">Vigentes</option>
                   <option value="finalizado">Finalizados</option>
                   <option value="cancelado">Cancelados</option>
                 </select>
+                <button 
+                  onClick={() => setShowModalCobro(true)}
+                  className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold shadow-md shadow-violet-500/20 hover:bg-violet-700 transition-colors w-full sm:w-auto"
+                >
+                  Cobrar Cuotas del Mes
+                </button>
+                <button 
+                  onClick={() => setShowModalReporte(true)}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold shadow-md shadow-emerald-500/20 hover:bg-emerald-700 transition-colors w-full sm:w-auto"
+                >
+                  Generar Reporte Excel
+                </button>
               </div>
             </div>
 
             {cargandoLista ? (
               <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /></div>
             ) : prestamos.length === 0 ? (
-              <div className="p-12 text-center text-slate-400">No hay préstamos registrados</div>
+              <div className="p-12 text-center text-slate-400">No hay préstamos registrados para estos filtros</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 border-y border-slate-200">
                     <tr>
                       <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap">Socio</th>
-                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap">Fecha</th>
                       <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap text-right">Total</th>
                       <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap text-center">Estado</th>
-                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap min-w-[200px]">Cuotas</th>
+                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap">Cuotas</th>
                       <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase whitespace-nowrap text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {prestamos.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                        {/* Socio */}
-                        <td className="px-4 py-3">
-                          <p className="font-bold text-slate-800 whitespace-nowrap">{p.socio?.nombre} {p.socio?.apellido}</p>
-                          <p className="text-[10px] font-mono text-slate-500">{p.socio?.legajo}</p>
-                        </td>
-                        
-                        {/* Fecha */}
-                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                          {formatDate(p.created_at)}
-                        </td>
-                        
-                        {/* Total */}
-                        <td className="px-4 py-3 text-right">
-                          <p className="font-black text-slate-800">{formatMoney(p.monto_total)}</p>
-                        </td>
-                        
-                        {/* Estado */}
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap ${
-                            p.estado === 'vigente' ? 'bg-amber-100 text-amber-700' :
-                            p.estado === 'finalizado' ? 'bg-emerald-100 text-emerald-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {p.estado}
-                          </span>
-                        </td>
-                        
-                        {/* Cuotas */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {p.cuotas_prestamo?.map(cuota => (
-                              <button
-                                key={cuota.id}
-                                onClick={() => handleToggleCuota(cuota.id)}
-                                disabled={cuota.estado === 'anulada'}
-                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
-                                  cuota.estado === 'pagada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' :
-                                  cuota.estado === 'anulada' ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' :
-                                  'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                                }`}
-                                title={`Cuota ${cuota.nro_cuota}: ${formatMoney(cuota.monto)} (${cuota.periodo?.nombre || 'Sin mes'})`}
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full ${cuota.estado === 'pagada' ? 'bg-emerald-500' : cuota.estado === 'anulada' ? 'bg-slate-300' : 'bg-slate-300'}`} />
-                                C{cuota.nro_cuota}
-                              </button>
-                            ))}
-                          </div>
-                        </td>
-                        
-                        {/* Acciones */}
-                        <td className="px-4 py-3 text-right">
-                          {p.estado === 'vigente' ? (
-                            <button 
-                              onClick={() => handleCancelarPrestamo(p.id)} 
-                              className="text-xs font-bold text-red-500 hover:text-red-600 px-2 py-1"
-                            >
-                              Cancelar
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-300">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {prestamos.map(p => {
+                      const cuotasPendientes = p.cuotas_prestamo?.filter(c => c.estado === 'pendiente') || [];
+                      
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50 transition-colors align-top">
+                          {/* Socio */}
+                          <td className="px-4 py-4">
+                            <p className="font-bold text-slate-800 whitespace-nowrap">{p.socio?.nombre} {p.socio?.apellido}</p>
+                            <p className="text-[10px] font-mono text-slate-500">Legajo: {p.socio?.legajo}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Otorgado: {formatDate(p.created_at)}</p>
+                          </td>
+                          
+                          {/* Total */}
+                          <td className="px-4 py-4 text-right">
+                            <p className="font-black text-slate-800">{formatMoney(p.monto_total)}</p>
+                            <p className="text-[10px] font-bold text-slate-500 mt-1">{p.cantidad_cuotas}x {formatMoney(p.monto_cuota)}</p>
+                          </td>
+                          
+                          {/* Estado */}
+                          <td className="px-4 py-4 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap ${
+                              p.estado === 'vigente' ? 'bg-amber-100 text-amber-700' :
+                              p.estado === 'finalizado' ? 'bg-emerald-100 text-emerald-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {p.estado}
+                            </span>
+                          </td>
+                          
+                          {/* Cuotas (Fijas en cajita) */}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {p.cuotas_prestamo?.map(cuota => (
+                                <button
+                                  key={cuota.id}
+                                  onClick={() => handleToggleCuota(cuota.id)}
+                                  disabled={cuota.estado === 'anulada'}
+                                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
+                                    cuota.estado === 'pagada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' :
+                                    cuota.estado === 'anulada' ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' :
+                                    'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                  title={`Cuota ${cuota.nro_cuota}: ${formatMoney(cuota.monto)} (${cuota.periodo?.nombre || 'Sin mes'})`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${cuota.estado === 'pagada' ? 'bg-emerald-500' : cuota.estado === 'anulada' ? 'bg-slate-300' : 'bg-amber-400'}`} />
+                                  C{cuota.nro_cuota}
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                          
+                          {/* Acciones */}
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex flex-col items-end gap-2">
+                              {p.estado === 'vigente' && (
+                                <button 
+                                  onClick={() => handleCancelarPrestamo(p.id)} 
+                                  className="text-[10px] font-bold text-red-500 hover:text-red-600 px-2 py-1"
+                                >
+                                  Cancelar Préstamo
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -357,6 +546,120 @@ export default function AdminFinanciera() {
 
         </div>
       </div>
+
+      {/* MODAL REPORTE EXCEL */}
+      {showModalReporte && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[95vw] lg:max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h2 className="text-xl font-black text-slate-800">Exportar Cobros (Agrupados por Socio)</h2>
+              <button onClick={() => setShowModalReporte(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500">✕</button>
+            </div>
+            
+            <div className="p-6 flex-1 overflow-y-auto">
+              <div className="flex gap-4 items-end mb-6">
+                <div className="flex-1 max-w-xs">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Seleccionar Período a Exportar</label>
+                  <select 
+                    value={periodoSeleccionado} 
+                    onChange={(e) => setPeriodoSeleccionado(e.target.value ? parseInt(e.target.value) : '')}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                  >
+                    <option value="" disabled>Seleccione un mes...</option>
+                    {periodos.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={cargarReporte}
+                    disabled={!periodoSeleccionado || cargandoReporte}
+                    className="px-6 py-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                  >
+                    {cargandoReporte ? 'Buscando...' : 'Previsualizar Datos'}
+                  </button>
+                </div>
+              </div>
+
+              {reporteData.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase">Legajo</th>
+                        <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase">Socio</th>
+                        <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase text-right">Total a Descontar</th>
+                        <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase">Detalle Cuotas</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {reporteData.map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="px-4 py-2 font-mono text-xs">{row.legajo}</td>
+                          <td className="px-4 py-2 font-bold text-slate-800">{row.nombre_completo}</td>
+                          <td className="px-4 py-2 font-black text-emerald-700 text-right">{formatMoney(row.total_a_descontar)}</td>
+                          <td className="px-4 py-2 text-xs text-slate-500 max-w-xs truncate" title={row.detalle}>{row.detalle}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+              <p className="text-sm text-slate-500 font-medium">
+                Socios encontrados: {reporteData.length}
+              </p>
+              <button 
+                onClick={descargarExcel}
+                disabled={reporteData.length === 0}
+                className="px-6 py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-md shadow-emerald-500/20"
+              >
+                <span>⬇️</span> Exportar a Excel (.xlsx)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COBRO MASIVO */}
+      {showModalCobro && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h2 className="text-xl font-black text-slate-800">Cobrar Cuotas del Mes</h2>
+              <button onClick={() => setShowModalCobro(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500">✕</button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-6">
+                Al aceptar, todas las cuotas de préstamos que correspondan al período seleccionado y se encuentren en estado <strong>Pendiente</strong>, pasarán automáticamente a estado <strong>Pagada</strong>.
+              </p>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Seleccionar Período</label>
+              <select 
+                value={periodoCobro} 
+                onChange={(e) => setPeriodoCobro(e.target.value ? parseInt(e.target.value) : '')}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 mb-6"
+              >
+                <option value="" disabled>Seleccione un mes...</option>
+                {periodos.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+
+              <button 
+                onClick={handleCobroMasivo}
+                disabled={!periodoCobro || cobrandoMasivo}
+                className="w-full px-6 py-3.5 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-50 transition-colors shadow-md shadow-violet-500/20"
+              >
+                {cobrandoMasivo ? 'Procesando...' : 'Confirmar Cobro Masivo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
