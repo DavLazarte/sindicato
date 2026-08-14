@@ -27,6 +27,20 @@ export default function AdminAcreditaciones() {
   const [visibleAuto, setVisibleAuto] = useState(50);
   const [visibleRev, setVisibleRev] = useState(50);
 
+  // Guia Modal state
+  const [showGuiaModal, setShowGuiaModal] = useState(false);
+  const [guiaData, setGuiaData] = useState<any[]>([]);
+  const [loadingGuia, setLoadingGuia] = useState(false);
+
+  const handleOpenGuia = () => {
+    setShowGuiaModal(true);
+    setLoadingGuia(true);
+    api.get<ApiResponse<any[]>>('/admin/acreditaciones/revision-mes-anterior')
+      .then(res => setGuiaData(res.data))
+      .catch(err => alert('Error al cargar guía: ' + err.message))
+      .finally(() => setLoadingGuia(false));
+  };
+
   // Fetch Socios (Unpaginated for easy selection)
   const fetchSocios = useCallback(() => {
     setLoadingSocios(true);
@@ -150,6 +164,12 @@ export default function AdminAcreditaciones() {
               <p className="text-emerald-100 text-sm">
                 Seleccioná los socios de las listas y asigná el monto a acreditar.
               </p>
+              <button 
+                onClick={handleOpenGuia}
+                className="mt-3 px-4 py-2 bg-emerald-500/30 hover:bg-emerald-500/50 text-emerald-50 rounded-xl text-sm font-bold border border-emerald-400/30 transition-colors flex items-center gap-2"
+              >
+                📋 Ver guía mes anterior
+              </button>
             </div>
             
             <div className="flex flex-col sm:flex-row gap-4 items-center w-full md:w-auto">
@@ -332,6 +352,50 @@ export default function AdminAcreditaciones() {
 
         </div>
       </div>
+
+      {showGuiaModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowGuiaModal(false)}>
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl flex flex-col h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-slate-800">📋 Guía de depósitos - Mes anterior</h3>
+              <button onClick={() => setShowGuiaModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1 text-xl">&times;</button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto bg-slate-50 rounded-2xl border border-slate-200">
+              {loadingGuia ? (
+                <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /></div>
+              ) : guiaData.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">No hay datos del mes anterior.</div>
+              ) : (
+                <table className="w-full text-sm text-left">
+                  <thead className="sticky top-0 bg-white border-b border-slate-200 shadow-sm z-10">
+                    <tr>
+                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase">Legajo</th>
+                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase">Socio en Revisión</th>
+                      <th className="px-4 py-3 font-bold text-slate-500 text-xs uppercase text-right">Acreditado Mes Anterior</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {guiaData.map((d, i) => (
+                      <tr key={i} className={`hover:bg-slate-100 transition-colors ${d.monto_total == 0 ? 'opacity-50 bg-slate-50' : ''}`}>
+                        <td className="px-4 py-3 font-mono text-slate-500 text-xs">{d.legajo}</td>
+                        <td className="px-4 py-3 font-bold text-slate-700">{d.nombre} {d.apellido} {d.monto_total == 0 && <span className="ml-2 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase font-bold">Sin depósitos</span>}</td>
+                        <td className="px-4 py-3 font-black text-emerald-600 text-right">{formatMoney(d.monto_total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setShowGuiaModal(false)} className="px-6 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold hover:bg-slate-200 transition-colors">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
