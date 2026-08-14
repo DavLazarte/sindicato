@@ -33,7 +33,7 @@ export default function AdminAcreditaciones() {
     api.get<ApiResponse<Socio[]>>(`/admin/socios?unpaginated=true${search ? `&search=${search}` : ''}`)
       .then((res) => { 
         // Solo mostramos socios activos para acreditar
-        const activeSocios = res.data.filter(s => s.estado === 'activo');
+        const activeSocios = res.data.filter(s => s.estado === 'activo' && (!s.user || s.user.estado === 'activo'));
         setSocios(activeSocios); 
         
         // Auto-select automáticos

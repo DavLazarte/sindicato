@@ -25,6 +25,7 @@ export interface Socio {
   created_at: string;
   updated_at: string;
   prestamos?: Prestamo[];
+  user?: User;
 }
 
 export interface Prestador {
