@@ -103,13 +103,15 @@ export default function PrestadorHistorial() {
         ? `${fechaDesde} al ${fechaHasta}`
         : fechaDesde ? `Desde ${fechaDesde}` : fechaHasta ? `Hasta ${fechaHasta}` : 'Período completo';
 
-      // Columnas
-      const colHeaders = ['Fecha', 'Socio', 'Legajo', 'Total Venta', 'Monto Cobrado', ...(pctRecargo > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
+      // Columnas reordenadas: Fecha / Legajo / Socio / Total Cobrado / Total Venta
+      const colHeaders = ['Fecha', 'Legajo', 'Socio', 'Total Cobrado', 'Total Venta', ...(pctRecargo > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
       const nCols = colHeaders.length;
       const emptyArr = () => Array(nCols).fill('');
 
-      const iMontoTotal = 3;
-      const iMontoCobrado = 4;
+      const iLegajo = 1;
+      const iSocio = 2;
+      const iMontoCobrado = 3;
+      const iMontoTotal = 4;
       const iActualizado = pctRecargo > 0 ? 5 : -1;
 
       const aoa: any[][] = [];
@@ -150,7 +152,8 @@ export default function PrestadorHistorial() {
         const ventasRows = data.filter(t => !t.es_cuotas && t.estado !== 'anulada');
         // ── Agrupado por socio ──
         aoa.push(['▸ RESUMEN POR SOCIO - VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
-        const grpHeaders = ['Socio', 'Legajo', 'Cant. Ventas', 'Total', ...(pctRecargo > 0 ? [colLabel] : [])];
+        // Nuevo orden: Socio / Legajo / Total / Cant. Ventas
+        const grpHeaders = ['Socio', 'Legajo', 'Total', 'Cant. Ventas', ...(pctRecargo > 0 ? [colLabel] : [])];
         const ventasColHeaderR_grp = aoa.length;
         aoa.push([...grpHeaders, ...Array(Math.max(0, nCols - grpHeaders.length)).fill('')]);
 
@@ -163,7 +166,7 @@ export default function PrestadorHistorial() {
             existing.count += 1;
           } else {
             socioMap.set(key, {
-              nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`,
+              nombre: `${t.socio?.apellido ?? ''}, ${t.socio?.nombre ?? ''}`,
               legajo: t.socio?.legajo ?? '',
               total: Number(t.monto_total),
               count: 1,
@@ -171,20 +174,24 @@ export default function PrestadorHistorial() {
           }
         });
 
-        socioMap.forEach(s => {
-          const row = emptyArr();
-          row[0] = s.nombre;
-          row[1] = s.legajo;
-          row[2] = s.count;
-          row[3] = s.total;
-          const mCols = [3];
-          if (pctRecargo > 0) {
-            row[4] = Math.round(s.total * (1 + pctRecargo / 100));
-            mCols.push(4);
-          }
-          moneyRows.push({ r: aoa.length, cols: mCols });
-          aoa.push(row);
-        });
+        // Ordenar por legajo numérico
+        [...socioMap.entries()]
+          .sort((a, b) => parseInt(a[0] || '0', 10) - parseInt(b[0] || '0', 10))
+          .forEach(([, s]) => {
+            const row = emptyArr();
+            // Socio / Legajo / Total / Cant. Ventas
+            row[0] = s.nombre;
+            row[1] = s.legajo;
+            row[2] = s.total;
+            row[3] = s.count;
+            const mCols = [2];
+            if (pctRecargo > 0) {
+              row[4] = Math.round(s.total * (1 + pctRecargo / 100));
+              mCols.push(4);
+            }
+            moneyRows.push({ r: aoa.length, cols: mCols });
+            aoa.push(row);
+          });
 
         // Reusar ventasColHeaderR para estilo
         var ventasColHeaderR = ventasColHeaderR_grp;
@@ -205,8 +212,8 @@ export default function PrestadorHistorial() {
         todasVentasRows.forEach(t => {
           const row = emptyArr();
           row[0] = new Date(t.created_at).toLocaleString('es-AR', { day: 'numeric', month: 'numeric', year: 'numeric' });
-          row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
-          row[2] = t.socio?.legajo ?? '';
+          row[iLegajo] = t.socio?.legajo ?? '';
+          row[iSocio] = `${t.socio?.apellido ?? ''}, ${t.socio?.nombre ?? ''}`;
           row[iMontoTotal] = Number(t.monto_total);
           
           if (t.es_cuotas) {
@@ -237,7 +244,8 @@ export default function PrestadorHistorial() {
 
         if (agruparPorSocio) {
           aoa.push(['▸ RESUMEN POR SOCIO - CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
-          const grpHeadersC = ['Socio', 'Legajo', 'Cant. Cuotas', 'Total Cobrado', ...(pctRecargo > 0 ? [colLabel] : [])];
+          // Nuevo orden: Socio / Legajo / Total Cobrado / Cant. Cuotas
+          const grpHeadersC = ['Socio', 'Legajo', 'Total Cobrado', 'Cant. Cuotas', ...(pctRecargo > 0 ? [colLabel] : [])];
           cuotasColHeaderR = aoa.length;
           aoa.push([...grpHeadersC, ...Array(Math.max(0, nCols - grpHeadersC.length)).fill('')]);
 
@@ -250,7 +258,7 @@ export default function PrestadorHistorial() {
               existing.count += 1;
             } else {
               socioMapC.set(key, {
-                nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`,
+                nombre: `${c.transaccion?.socio?.apellido ?? ''}, ${c.transaccion?.socio?.nombre ?? ''}`,
                 legajo: c.transaccion?.socio?.legajo ?? '',
                 total: Number(c.monto),
                 count: 1,
@@ -258,36 +266,43 @@ export default function PrestadorHistorial() {
             }
           });
 
-          socioMapC.forEach(s => {
-            const row = emptyArr();
-            row[0] = s.nombre;
-            row[1] = s.legajo;
-            row[2] = s.count;
-            row[3] = s.total;
-            const mCols = [3];
-            if (pctRecargo > 0) {
-              row[4] = Math.round(s.total * (1 + pctRecargo / 100));
-              mCols.push(4);
-            }
-            moneyRows.push({ r: aoa.length, cols: mCols });
-            aoa.push(row);
-          });
+          // Ordenar por legajo numérico
+          [...socioMapC.entries()]
+            .sort((a, b) => parseInt(a[0] || '0', 10) - parseInt(b[0] || '0', 10))
+            .forEach(([, s]) => {
+              const row = emptyArr();
+              // Socio / Legajo / Total Cobrado / Cant. Cuotas
+              row[0] = s.nombre;
+              row[1] = s.legajo;
+              row[2] = s.total;
+              row[3] = s.count;
+              const mCols = [2];
+              if (pctRecargo > 0) {
+                row[4] = Math.round(s.total * (1 + pctRecargo / 100));
+                mCols.push(4);
+              }
+              moneyRows.push({ r: aoa.length, cols: mCols });
+              aoa.push(row);
+            });
         } else {
           aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
           cuotasColHeaderR = aoa.length;
           aoa.push([...colHeaders]);
-          cuotasData.forEach((c: any) => {
-            const row = emptyArr();
-            row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
-            row[1] = `${c.transaccion?.socio?.nombre} ${c.transaccion?.socio?.apellido}`;
-            row[2] = c.transaccion?.socio?.legajo ?? '';
-            row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0);
-            row[iMontoCobrado] = Number(c.monto);
-            row[nCols - 2] = `Cuota ${c.nro_cuota} - ${c.periodo?.nombre ?? ''}`;
-            row[nCols - 1] = 'cobrada';
-            moneyRows.push({ r: aoa.length, cols: [iMontoTotal, iMontoCobrado] });
-            aoa.push(row);
-          });
+          // Ordenar por legajo numérico
+          [...cuotasData]
+            .sort((a: any, b: any) => parseInt(a.transaccion?.socio?.legajo || '0', 10) - parseInt(b.transaccion?.socio?.legajo || '0', 10))
+            .forEach((c: any) => {
+              const row = emptyArr();
+              row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
+              row[iLegajo] = c.transaccion?.socio?.legajo ?? '';
+              row[iSocio] = `${c.transaccion?.socio?.apellido ?? ''}, ${c.transaccion?.socio?.nombre ?? ''}`;
+              row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0);
+              row[iMontoCobrado] = Number(c.monto);
+              row[nCols - 2] = `Cuota ${c.nro_cuota} - ${c.periodo?.nombre ?? ''}`;
+              row[nCols - 1] = 'cobrada';
+              moneyRows.push({ r: aoa.length, cols: [iMontoTotal, iMontoCobrado] });
+              aoa.push(row);
+            });
         }
       }
 
@@ -340,12 +355,13 @@ export default function PrestadorHistorial() {
           if (ws[ref] && typeof ws[ref].v === 'number') {
             ws[ref].t = 'n';
             ws[ref].z = moneyFmt;
+            ws[ref].s = { ...ws[ref].s, alignment: { horizontal: 'left', vertical: 'center' } };
           }
         });
       });
 
-      // Anchos de columna
-      const colWidths = [{ wch: 22 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+      // Anchos: Fecha / Legajo / Socio / Total Cobrado / Total Venta / [Actualizado] / Tipo / Estado
+      const colWidths = [{ wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 16 }, { wch: 16 }];
       if (pctRecargo > 0) colWidths.push({ wch: 18 });
       colWidths.push({ wch: 22 }, { wch: 12 });
       ws['!cols'] = colWidths;
