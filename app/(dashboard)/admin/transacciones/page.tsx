@@ -145,23 +145,28 @@ export default function AdminTransacciones() {
 
       const colHeaders = ['Fecha', 'Socio', 'Legajo', 'Total Venta', 'Monto Cobrado', ...(recargoPct > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
       const nCols = colHeaders.length;
-      const iMontoTotal = 3;
-      const iMontoCobrado = 4;
-      const iActualizado = recargoPct > 0 ? 5 : -1;
-
-      const emptyArr = () => Array(nCols).fill('');
+      
+      const newColHeaders = ['Fecha', 'Legajo', 'Socio', 'Total Cobrado', 'Total Venta', ...(recargoPct > 0 ? [colLabel] : []), 'Tipo', 'Estado'];
+      const nNewCols = newColHeaders.length;
+      const iNewLegajo = 1;
+      const iNewSocio = 2;
+      const iNewCobrado = 3;
+      const iNewTotal = 4;
+      const iNewActualizado = recargoPct > 0 ? 5 : -1;
+      
+      const emptyNewArr = () => Array(nNewCols).fill('');
       const aoa: any[][] = [];
       const moneyRows: { r: number; cols: number[] }[] = [];
 
-      aoa.push([`${pData.nombre.toUpperCase()}`, ...Array(nCols - 1).fill('')]);
-      aoa.push([`Período: ${periodoLabel}`, ...Array(nCols - 1).fill('')]);
-      aoa.push(emptyArr());
+      aoa.push([`${pData.nombre.toUpperCase()}`, ...Array(nNewCols - 1).fill('')]);
+      aoa.push([`Período: ${periodoLabel}`, ...Array(nNewCols - 1).fill('')]);
+      aoa.push(Array(nNewCols).fill(''));
 
       const summStart = aoa.length;
-      aoa.push(['RESUMEN', ...Array(nCols - 1).fill('')]);
+      aoa.push(['RESUMEN', ...Array(nNewCols - 1).fill('')]);
       const pushSum = (label: string, monto: number) => {
-        const row = emptyArr(); row[0] = label; row[iMontoCobrado] = monto;
-        moneyRows.push({ r: aoa.length, cols: [iMontoCobrado] });
+        const row = emptyNewArr(); row[0] = label; row[iNewCobrado] = monto;
+        moneyRows.push({ r: aoa.length, cols: [iNewCobrado] });
         aoa.push(row);
       };
       pushSum('Ventas directas', totalVentas);
@@ -172,112 +177,132 @@ export default function AdminTransacciones() {
         pushSum('TOTAL A LIQUIDAR', Math.round(totalActualizado));
       }
       const summEnd = aoa.length - 1;
-      aoa.push(emptyArr());
+      aoa.push(Array(nNewCols).fill(''));
 
       const ventasSubR = aoa.length;
       let cuotasSubR = -1;
       let cuotasColHdrR = -1;
+      let ventasColHdrR = -1;
       
+      const sortByLegajo = (arr: any[], getLegajo: (x: any) => string) =>
+        [...arr].sort((a, b) => parseInt(getLegajo(a) || '0', 10) - parseInt(getLegajo(b) || '0', 10));
+
       if (agruparPorSocio) {
-        aoa.push(['▸ RESUMEN POR SOCIO (VENTAS DIRECTAS Y CUOTAS COBRADAS)', ...Array(nCols - 1).fill('')]);
-        const grpH = ['Socio', 'Legajo', 'Cant. Ventas', 'Ventas Directas', 'Cant. Cuotas', 'Cuotas Cobradas', 'Total Cobrado', ...(recargoPct > 0 ? [colLabel] : [])];
-        var ventasColHdrR = aoa.length;
-        aoa.push([...grpH, ...Array(Math.max(0, nCols - grpH.length)).fill('')]);
+        aoa.push(['▸ RESUMEN POR SOCIO (VENTAS DIRECTAS Y CUOTAS COBRADAS)', ...Array(nNewCols - 1).fill('')]);
+        // Nuevo orden: Socio / Legajo / Total Cobrado / Ventas Directas / Cant. Ventas / Cuotas Cobradas / Cant. Cuotas
+        const grpH = ['Socio', 'Legajo', 'Total Cobrado', 'Ventas Directas', 'Cant. Ventas', 'Cuotas Cobradas', 'Cant. Cuotas', ...(recargoPct > 0 ? [colLabel] : [])];
+        ventasColHdrR = aoa.length;
+        aoa.push([...grpH, ...Array(Math.max(0, nNewCols - grpH.length)).fill('')]);
 
         const sMap = new Map<string, { nombre: string; legajo: string; cVentas: number; tVentas: number; cCuotas: number; tCuotas: number }>();
         
         ventasDirectas.forEach(t => {
           const k = t.socio?.legajo ?? 'SIN';
           const ex = sMap.get(k);
+          const apellidoNombre = `${t.socio?.apellido ?? ''}, ${t.socio?.nombre ?? ''}`;
           if (ex) { ex.tVentas += Number(t.monto_total); ex.cVentas++; }
-          else sMap.set(k, { nombre: `${t.socio?.nombre ?? ''} ${t.socio?.apellido ?? ''}`, legajo: t.socio?.legajo ?? '', cVentas: 1, tVentas: Number(t.monto_total), cCuotas: 0, tCuotas: 0 });
+          else sMap.set(k, { nombre: apellidoNombre, legajo: t.socio?.legajo ?? '', cVentas: 1, tVentas: Number(t.monto_total), cCuotas: 0, tCuotas: 0 });
         });
         
         pData.cuotas.forEach((c: any) => {
           const k = c.transaccion?.socio?.legajo ?? 'SIN';
           const ex = sMap.get(k);
+          const apellidoNombre = `${c.transaccion?.socio?.apellido ?? ''}, ${c.transaccion?.socio?.nombre ?? ''}`;
           if (ex) { ex.tCuotas += Number(c.monto); ex.cCuotas++; }
-          else sMap.set(k, { nombre: `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`, legajo: c.transaccion?.socio?.legajo ?? '', cVentas: 0, tVentas: 0, cCuotas: 1, tCuotas: Number(c.monto) });
+          else sMap.set(k, { nombre: apellidoNombre, legajo: c.transaccion?.socio?.legajo ?? '', cVentas: 0, tVentas: 0, cCuotas: 1, tCuotas: Number(c.monto) });
         });
 
-        sMap.forEach(s => {
+        const sortedEntries = [...sMap.entries()].sort((a, b) => parseInt(a[0] || '0', 10) - parseInt(b[0] || '0', 10));
+        sortedEntries.forEach(([, s]) => {
           const total = s.tVentas + s.tCuotas;
-          const row = emptyArr(); 
-          row[0] = s.nombre; row[1] = s.legajo; 
-          row[2] = s.cVentas; row[3] = s.tVentas; 
-          row[4] = s.cCuotas; row[5] = s.tCuotas;
-          row[6] = total;
+          const row = Array(nNewCols).fill('');
+          // Socio / Legajo / Total Cobrado / Ventas Directas / Cant. Ventas / Cuotas Cobradas / Cant. Cuotas
+          row[0] = s.nombre; row[1] = s.legajo;
+          row[2] = total;
+          row[3] = s.tVentas; row[4] = s.cVentas;
+          row[5] = s.tCuotas; row[6] = s.cCuotas;
           
-          const mCols = [3, 5, 6];
+          const mCols = [2, 3, 5];
           if (recargoPct > 0) { row[7] = Math.round(total * (1 + recargoPct / 100)); mCols.push(7); }
           moneyRows.push({ r: aoa.length, cols: mCols });
           aoa.push(row);
         });
 
       } else {
-        aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nCols - 1).fill('')]);
-        var ventasColHdrR = aoa.length;
-        aoa.push([...colHeaders]);
-        ventasDirectas.forEach(t => {
-          const row = emptyArr();
+        aoa.push(['▸ DETALLE DE VENTAS DIRECTAS', ...Array(nNewCols - 1).fill('')]);
+        ventasColHdrR = aoa.length;
+        aoa.push([...newColHeaders]);
+
+        sortByLegajo(ventasDirectas, t => t.socio?.legajo ?? '').forEach(t => {
+          const row = emptyNewArr();
           row[0] = new Date(t.created_at).toLocaleString('es-AR');
-          row[1] = `${t.socio?.nombre} ${t.socio?.apellido}`;
-          row[2] = t.socio?.legajo ?? '';
-          row[iMontoTotal] = Number(t.monto_total); row[iMontoCobrado] = Number(t.monto_cobrado);
-          if (recargoPct > 0) row[iActualizado] = Math.round(Number(t.monto_total) * (1 + recargoPct / 100));
-          row[nCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago'; row[nCols - 1] = t.estado;
-          const mCols = [iMontoTotal, iMontoCobrado, ...(recargoPct > 0 ? [iActualizado] : [])];
+          row[iNewLegajo] = t.socio?.legajo ?? '';
+          row[iNewSocio] = `${t.socio?.apellido ?? ''}, ${t.socio?.nombre ?? ''}`;
+          row[iNewCobrado] = Number(t.monto_cobrado);
+          row[iNewTotal] = Number(t.monto_total);
+          if (recargoPct > 0) row[iNewActualizado] = Math.round(Number(t.monto_total) * (1 + recargoPct / 100));
+          row[nNewCols - 2] = t.tipo === 'manual' ? 'Carga manual' : '1 Pago';
+          row[nNewCols - 1] = t.estado;
+          const mCols = [iNewCobrado, iNewTotal, ...(recargoPct > 0 ? [iNewActualizado] : [])];
           moneyRows.push({ r: aoa.length, cols: mCols });
           aoa.push(row);
         });
-        aoa.push(emptyArr());
+        aoa.push(emptyNewArr());
 
         if (pData.cuotas.length > 0) {
           cuotasSubR = aoa.length;
-          aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nCols - 1).fill('')]);
+          aoa.push(['▸ DETALLE DE CUOTAS COBRADAS', ...Array(nNewCols - 1).fill('')]);
           cuotasColHdrR = aoa.length;
-          aoa.push([...colHeaders]);
-          pData.cuotas.forEach((c: any) => {
-            const row = emptyArr();
+          aoa.push([...newColHeaders]);
+
+          sortByLegajo(pData.cuotas, (c: any) => c.transaccion?.socio?.legajo ?? '').forEach((c: any) => {
+            const row = emptyNewArr();
             row[0] = new Date(c.cobrada_en).toLocaleDateString('es-AR');
-            row[1] = `${c.transaccion?.socio?.nombre ?? ''} ${c.transaccion?.socio?.apellido ?? ''}`;
-            row[2] = c.transaccion?.socio?.legajo ?? '';
-            row[iMontoTotal] = Number(c.transaccion?.monto_total ?? 0); row[iMontoCobrado] = Number(c.monto);
-            if (recargoPct > 0) row[iActualizado] = Math.round(Number(c.monto) * (1 + recargoPct / 100));
-            row[nCols - 2] = `Cuota ${c.nro_cuota}`; row[nCols - 1] = 'cobrada';
-            const mCols = [iMontoTotal, iMontoCobrado, ...(recargoPct > 0 ? [iActualizado] : [])];
+            row[iNewLegajo] = c.transaccion?.socio?.legajo ?? '';
+            row[iNewSocio] = `${c.transaccion?.socio?.apellido ?? ''}, ${c.transaccion?.socio?.nombre ?? ''}`;
+            row[iNewCobrado] = Number(c.monto);
+            row[iNewTotal] = Number(c.transaccion?.monto_total ?? 0);
+            if (recargoPct > 0) row[iNewActualizado] = Math.round(Number(c.monto) * (1 + recargoPct / 100));
+            row[nNewCols - 2] = `Cuota ${c.nro_cuota}`;
+            row[nNewCols - 1] = 'cobrada';
+            const mCols = [iNewCobrado, iNewTotal, ...(recargoPct > 0 ? [iNewActualizado] : [])];
             moneyRows.push({ r: aoa.length, cols: mCols });
             aoa.push(row);
           });
         }
       }
 
+      const nStyles = agruparPorSocio ? nCols : nNewCols;
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      applyStyles(ws, aoa.length, nCols);
-
-      styleRow(ws, 0, nCols, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } }, alignment: { horizontal: 'center', vertical: 'center' } });
-      styleRow(ws, 1, nCols, { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } } });
+      applyStyles(ws, aoa.length, nStyles);
+      styleRow(ws, 0, nStyles, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } }, alignment: { horizontal: 'center', vertical: 'center' } });
+      styleRow(ws, 1, nStyles, { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } } });
       for (let R = summStart; R <= summEnd; ++R)
-        styleRow(ws, R, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'D1FAE5' } } });
-      styleRow(ws, summStart, nCols, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
-      styleRow(ws, summEnd, nCols, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+        styleRow(ws, R, nStyles, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'D1FAE5' } } });
+      styleRow(ws, summStart, nStyles, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
+      styleRow(ws, summEnd, nStyles, { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '064E3B' } } });
       
       [ventasSubR, cuotasSubR].filter(r => r >= 0).forEach(r =>
-        styleRow(ws, r, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1E3A5F' } }, fill: { fgColor: { rgb: 'DBEAFE' } } })
+        styleRow(ws, r, nStyles, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1E3A5F' } }, fill: { fgColor: { rgb: 'DBEAFE' } } })
       );
       [ventasColHdrR, cuotasColHdrR].filter(r => r >= 0).forEach(r =>
-        styleRow(ws, r, nCols, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F4E79' } }, alignment: { horizontal: 'center', vertical: 'center' } })
+        styleRow(ws, r, nStyles, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F4E79' } }, alignment: { horizontal: 'center', vertical: 'center' } })
       );
 
       moneyRows.forEach(({ r, cols }) => {
         cols.forEach(c => {
           const ref = XLSX.utils.encode_cell({ r, c });
-          if (ws[ref] && typeof ws[ref].v === 'number') { ws[ref].t = 'n'; ws[ref].z = '"$"#,##0'; }
+          if (ws[ref] && typeof ws[ref].v === 'number') {
+            ws[ref].t = 'n';
+            ws[ref].z = '"$"#,##0';
+            ws[ref].s = { ...ws[ref].s, alignment: { horizontal: 'left', vertical: 'center' } };
+          }
         });
       });
-      const colWidths = [{ wch: 22 }, { wch: 28 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+      // Anchos columnas nuevo orden: Fecha / Legajo / Socio / Total Cobrado / Total Venta / [Actualizado] / Tipo / Estado
+      const colWidths = [{ wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 16 }, { wch: 16 }];
       if (recargoPct > 0) colWidths.push({ wch: 18 });
-      colWidths.push({ wch: 22 }, { wch: 12 });
+      colWidths.push({ wch: 18 }, { wch: 12 });
       ws['!cols'] = colWidths;
 
       const sheetName = pData.nombre.replace(/[\\/*?:[\]]/g, '').slice(0, 31);
