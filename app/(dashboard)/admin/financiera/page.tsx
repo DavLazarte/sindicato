@@ -18,6 +18,7 @@ export default function AdminFinanciera() {
 
   const [montoTotal, setMontoTotal] = useState('');
   const [cantidadCuotas, setCantidadCuotas] = useState(1);
+  const [periodoInicioId, setPeriodoInicioId] = useState<number | ''>('');
   const [observaciones, setObservaciones] = useState('');
   const [creando, setCreando] = useState(false);
 
@@ -107,12 +108,14 @@ export default function AdminFinanciera() {
         socio_id: socioSeleccionado.id,
         monto_total: m,
         cantidad_cuotas: cantidadCuotas,
-        observaciones
+        observaciones,
+        ...(periodoInicioId ? { periodo_inicio_id: periodoInicioId } : {})
       });
       alert('✅ Préstamo creado exitosamente');
       setSocioSeleccionado(null);
       setMontoTotal('');
       setCantidadCuotas(1);
+      setPeriodoInicioId('');
       setObservaciones('');
       fetchPrestamos(1);
     } catch (err: unknown) {
@@ -181,10 +184,16 @@ export default function AdminFinanciera() {
     // Calcular total general
     const sumTotal = reporteData.reduce((acc, row) => acc + row.total_a_descontar, 0);
 
-    // Preparar detalles separados
+    // Preparar detalles separados — ordenados descendente (3/3 primero, luego 2/3, luego 1/3)
     let maxDetalles = 0;
     const parsedData = reporteData.map(row => {
-      const detalles = row.detalle ? row.detalle.split(' | ') : [];
+      const detalles = row.detalle
+        ? row.detalle.split(' | ').sort((a: string, b: string) => {
+            const nroA = parseInt(a.match(/Cuota (\d+)\//)?.[1] || '0', 10);
+            const nroB = parseInt(b.match(/Cuota (\d+)\//)?.[1] || '0', 10);
+            return nroB - nroA; // descendente: 3/3 → 2/3 → 1/3
+          })
+        : [];
       if (detalles.length > maxDetalles) maxDetalles = detalles.length;
       return { ...row, detallesArray: detalles };
     });
@@ -201,14 +210,14 @@ export default function AdminFinanciera() {
     // Fila 2: Espacio
     aoa.push([]);
 
-    // Fila 3: Cabeceras
-    const headers = ['Legajo', 'Socio', 'Total a Descontar'];
+    // Fila 3: Cabeceras — Socio / Legajo / Total / Detalles
+    const headers = ['Socio', 'Legajo', 'Total a Descontar'];
     for (let i = 0; i < maxDetalles; i++) headers.push(`Detalle Cuota ${i+1}`);
     aoa.push(headers);
 
     // Fila 4+: Datos
     parsedData.forEach(row => {
-      const rowData = [row.legajo, row.nombre_completo, row.total_a_descontar, ...row.detallesArray];
+      const rowData = [row.nombre_completo, row.legajo, row.total_a_descontar, ...row.detallesArray];
       aoa.push(rowData);
     });
 
@@ -254,6 +263,10 @@ export default function AdminFinanciera() {
 
         // Filas de Datos
         if (R >= 4) {
+          // Columna 1: Legajo — alineado a la derecha
+          if (C === 1) {
+            ws[cellRef].s.alignment = { horizontal: 'right', vertical: 'center' };
+          }
           // Columna 2: Total a Descontar
           if (C === 2) {
              ws[cellRef].s.font.bold = true;
@@ -281,10 +294,10 @@ export default function AdminFinanciera() {
     ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }); // Título ocupa todo
     ws['!merges'].push({ s: { r: 1, c: 1 }, e: { r: 1, c: 2 } }); // Total se expande un poco
 
-    // Ajustar anchos
+    // Ajustar anchos — nuevo orden: Socio / Legajo / Total / Detalles
     const wscols = [
-      {wch: 12}, // Legajo
-      {wch: 40}, // Socio
+      {wch: 40}, // Socio (ancho)
+      {wch: 10}, // Legajo (angosto)
       {wch: 20}, // Total
     ];
     for (let i = 0; i < maxDetalles; i++) {
@@ -388,6 +401,29 @@ export default function AdminFinanciera() {
                   <span className="text-lg font-black text-slate-800">{formatMoney(parseFloat(montoTotal) / cantidadCuotas)}</span>
                 </div>
               )}
+
+              {/* Período de inicio (opcional — por defecto el actual) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Período de inicio
+                  <span className="ml-2 text-[10px] font-normal normal-case text-slate-400">(dejar vacío = período actual)</span>
+                </label>
+                <select
+                  value={periodoInicioId}
+                  onChange={(e) => setPeriodoInicioId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                >
+                  <option value="">— Período actual (automático) —</option>
+                  {periodos.map(p => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                  ))}
+                </select>
+                {periodoInicioId && (
+                  <p className="mt-1.5 text-xs text-amber-600 font-medium">
+                    ⚠️ La cuota 1 se asignará al período seleccionado
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Observaciones (Opcional)</label>

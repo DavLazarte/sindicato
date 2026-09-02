@@ -1,4 +1,4 @@
-const CACHE_NAME = 'soem-pwa-cache-v21';
+const CACHE_NAME = 'soem-pwa-cache-v23';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
