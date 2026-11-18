@@ -147,6 +147,31 @@ export default function SocioDashboard() {
           </div>
         )}
 
+        {/* Avisos de tope 24hs post-depósito */}
+        {data.avisos_tope_24h && data.avisos_tope_24h.length > 0 && (
+          <div className="space-y-3">
+            {data.avisos_tope_24h.map((aviso) => (
+              <div key={aviso.prestador_id} className="bg-amber-50 rounded-3xl border-2 border-amber-200 p-5 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl shrink-0">🛡️</span>
+                  <div className="text-sm text-amber-900 leading-relaxed">
+                    <p className="font-bold text-amber-950 mb-1">
+                      {aviso.prestador_nombre} descontó {formatMoney(aviso.monto)} de una venta vieja
+                    </p>
+                    <p className="text-amber-800">
+                      {aviso.bloqueado_activo
+                        ? `Durante las próximas 24 hs (hasta el ${aviso.hasta_texto} hs) no podés comprar ahí. `
+                        : 'Se aplicó el límite de 24 hs posteriores al depósito en ese comercio. '}
+                      Esto lo hacemos para evitar que se descuente todo el depósito como pasó en meses anteriores.
+                      {aviso.bloqueado_activo && ' Si necesitás habilitarlo para comprar, pedilo en el sindicato.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Recent Transactions */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm">
           <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -165,27 +190,35 @@ export default function SocioDashboard() {
             {data.movimientos?.map((mov) => {
               const isAnulada = mov.estado === 'anulada';
               const isPositive = mov.signo === '+';
+              const isAvisoTope = mov.tipo === 'aviso_tope';
 
               return (
-                <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+                <div key={mov.id} className={`flex items-start gap-4 p-4 transition-colors ${isAvisoTope ? 'bg-amber-50/70 hover:bg-amber-50' : 'hover:bg-slate-50'}`}>
                   <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 ${
-                    isAnulada ? 'bg-slate-100' : isPositive ? 'bg-emerald-50' : 'bg-red-50'
+                    isAvisoTope ? 'bg-amber-100' : isAnulada ? 'bg-slate-100' : isPositive ? 'bg-emerald-50' : 'bg-red-50'
                   }`}>
-                    {isAnulada ? '❌' : isPositive ? '💰' : '🛒'}
+                    {isAvisoTope ? '🛡️' : isAnulada ? '❌' : isPositive ? '💰' : '🛒'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">
+                    <p className={`text-sm font-semibold ${isAvisoTope ? 'text-amber-950' : 'text-slate-800 truncate'}`}>
                       {mov.titulo}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">{formatDate(mov.fecha)}</p>
+                    {mov.detalle && (
+                      <p className={`text-xs mt-1.5 px-2.5 py-1.5 rounded-xl leading-snug ${
+                        isAvisoTope ? 'bg-amber-100/80 text-amber-900 font-medium' : 'bg-slate-100 text-slate-500 inline-block'
+                      }`}>
+                        {mov.detalle}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${isAnulada ? 'text-slate-400 line-through' : isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+                    <p className={`text-sm font-bold ${isAvisoTope ? 'text-amber-700' : isAnulada ? 'text-slate-400 line-through' : isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
                       {mov.signo}{formatMoney(mov.monto)}
                     </p>
                     {mov.estado && mov.estado !== 'completado' && mov.estado !== 'confirmada' && mov.estado !== 'cobrada' && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${
-                        isAnulada ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-600'
+                        isAnulada ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
                       }`}>
                         {mov.estado}
                       </span>

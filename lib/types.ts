@@ -11,6 +11,29 @@ export interface User {
   prestador?: Prestador;
 }
 
+export interface AvisoTope24h {
+  prestador_id: number;
+  prestador_nombre: string;
+  monto: number;
+  fecha: string;
+  hasta: string;
+  hasta_texto: string;
+  bloqueado_activo: boolean;
+  liberado_admin: boolean;
+}
+
+export interface Bloqueo24hPrestador {
+  en_ventana: boolean;
+  liberado_admin: boolean;
+  inhabilitado: boolean;
+  consumido: number;
+  tope: number;
+  disponible_local: number;
+  desde?: string;
+  hasta: string | null;
+  hasta_texto: string | null;
+}
+
 export interface Socio {
   id: number;
   user_id: number;
@@ -26,6 +49,7 @@ export interface Socio {
   updated_at: string;
   prestamos?: Prestamo[];
   user?: User;
+  avisos_tope_24h?: AvisoTope24h[];
 }
 
 export interface Prestador {
@@ -67,11 +91,11 @@ export interface Transaccion {
 
 export interface Movimiento {
   id: string;
-  tipo: 'compra' | 'acreditacion' | 'cuota' | 'prestamo' | 'cuota_prestamo';
+  tipo: 'compra' | 'acreditacion' | 'cuota' | 'prestamo' | 'cuota_prestamo' | 'aviso_tope';
   titulo: string;
   monto: number;
   monto_cobrado?: number;
-  signo: '+' | '-';
+  signo: '+' | '-' | '';
   estado: string;
   fecha: string;
   detalle?: string | null;
@@ -183,6 +207,7 @@ export interface DashboardSocio {
   movimientos: Movimiento[];
   cuotas_pendientes?: Cuota[];
   prestamos_vigentes?: Prestamo[];
+  avisos_tope_24h?: AvisoTope24h[];
 }
 
 export interface DashboardPrestador {

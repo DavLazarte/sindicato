@@ -87,6 +87,17 @@ export default function AdminSocios() {
     }
   };
 
+  const handleLiberarTope = async (s: Socio) => {
+    if (!confirm(`¿Habilitar a ${s.nombre} ${s.apellido} para comprar sin el tope de $100.000 durante las 24 hs post-depósito?`)) return;
+    try {
+      const res = await api.post(`/admin/socios/${s.id}/liberar-tope`);
+      alert((res as any)?.message || 'Socio habilitado correctamente.');
+      fetchData(page);
+    } catch (err: any) {
+      alert(err?.message || 'Error al habilitar socio.');
+    }
+  };
+
   const handleSearch = (value: string) => {
     setSearch(value);
   };
@@ -117,10 +128,23 @@ export default function AdminSocios() {
                   <th className="text-right px-4 py-3 font-bold text-slate-500 text-xs uppercase">Acciones</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-50">
-                  {socios.map((s) => (
+                  {socios.map((s) => {
+                    const bloqueosActivos = (s.avisos_tope_24h || []).filter((a) => a.bloqueado_activo);
+                    return (
                     <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 font-mono font-bold text-slate-600">{s.legajo}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{s.nombre} {s.apellido}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">
+                        <div>{s.nombre} {s.apellido}</div>
+                        {bloqueosActivos.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {bloqueosActivos.map((b) => (
+                              <span key={b.prestador_id} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                                🔒 Tope 24hs en {b.prestador_nombre} ({formatMoney(b.monto)})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatMoney(s.saldo_disponible)}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.deposito_automatico ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{s.deposito_automatico ? 'Automático' : 'Revisión'}</span>
@@ -129,18 +153,26 @@ export default function AdminSocios() {
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${s.estado === 'activo' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span>
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
+                        {bloqueosActivos.length > 0 && (
+                          <button onClick={() => handleLiberarTope(s)} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors">
+                            🔓 Habilitar 24hs
+                          </button>
+                        )}
                         <button onClick={() => openEdit(s)} className="text-xs font-bold text-blue-600 hover:text-blue-700">Editar</button>
                         <button onClick={() => handleDelete(s.id)} className="text-xs font-bold text-red-500 hover:text-red-600">Eliminar</button>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile cards */}
             <div className="md:hidden space-y-3">
-              {socios.map((s) => (
+              {socios.map((s) => {
+                const bloqueosActivos = (s.avisos_tope_24h || []).filter((a) => a.bloqueado_activo);
+                return (
                 <div key={s.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div>
@@ -152,15 +184,30 @@ export default function AdminSocios() {
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.deposito_automatico ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{s.deposito_automatico ? 'Automático' : 'Revisión'}</span>
                     </div>
                   </div>
+                  {bloqueosActivos.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {bloqueosActivos.map((b) => (
+                        <span key={b.prestador_id} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                          🔒 Tope 24hs en {b.prestador_nombre} ({formatMoney(b.monto)})
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <p className="text-lg font-black text-emerald-600">{formatMoney(s.saldo_disponible)}</p>
                     <div className="space-x-2">
+                      {bloqueosActivos.length > 0 && (
+                        <button onClick={() => handleLiberarTope(s)} className="text-xs font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-800">
+                          🔓 Habilitar 24hs
+                        </button>
+                      )}
                       <button onClick={() => openEdit(s)} className="text-xs font-bold text-blue-600">Editar</button>
                       <button onClick={() => handleDelete(s.id)} className="text-xs font-bold text-red-500">Eliminar</button>
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
 
             {lastPage > 1 && (
@@ -196,11 +243,16 @@ export default function AdminSocios() {
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Contraseña</label>
                   <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:border-emerald-500 transition-all" /></div>
               ) : (
-                <div className="flex flex-col items-start bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <span className="block text-xs font-bold text-slate-500 uppercase mb-2">Seguridad</span>
-                  <button type="button" onClick={() => editingSocio && handleResetPassword(editingSocio.id)} className="text-xs font-bold px-3 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors">
-                    🔑 Restaurar Contraseña a Legajo
-                  </button>
+                <div className="flex flex-col items-start gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="block text-xs font-bold text-slate-500 uppercase">Seguridad y Tope 24hs</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => editingSocio && handleResetPassword(editingSocio.id)} className="text-xs font-bold px-3 py-2 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors">
+                      🔑 Restaurar Contraseña a Legajo
+                    </button>
+                    <button type="button" onClick={() => editingSocio && handleLiberarTope(editingSocio)} className="text-xs font-bold px-3 py-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-lg transition-colors">
+                      🔓 Habilitar Tope 24hs Post-Depósito
+                    </button>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">

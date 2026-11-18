@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { TopBar } from '@/components/layout/Navigation';
-import type { ApiResponse, Cuota } from '@/lib/types';
+import type { ApiResponse, Cuota, Bloqueo24hPrestador } from '@/lib/types';
 
 function formatMoney(n: number) { return '$' + Math.round(n).toLocaleString('es-AR'); }
 
@@ -14,6 +14,7 @@ interface SocioBuscado {
   saldo_disponible: number;
   estado: string;
   cuotas_pendientes?: Cuota[];
+  bloqueo_24h?: Bloqueo24hPrestador;
 }
 
 export default function PrestadorCobrar() {
@@ -148,6 +149,33 @@ export default function PrestadorCobrar() {
               <p className={`text-3xl font-black ${socio.saldo_disponible > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {formatMoney(socio.saldo_disponible)}
               </p>
+              {socio.bloqueo_24h?.en_ventana && !socio.bloqueo_24h?.liberado_admin && !socio.bloqueo_24h?.inhabilitado && (
+                <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">
+                  ⏳ Tope 24 hs post-depósito: disponible en tu local hoy <strong>{formatMoney(socio.bloqueo_24h.disponible_local)}</strong> (ya cobrado: {formatMoney(socio.bloqueo_24h.consumido)} / {formatMoney(socio.bloqueo_24h.tope)})
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Inhabilitado por tope 24hs post-depósito */}
+        {socio && socio.bloqueo_24h?.inhabilitado && (
+          <div className="bg-red-50 rounded-3xl border-2 border-red-200 p-6 shadow-sm animate-in">
+            <div className="flex items-start gap-3">
+              <span className="text-3xl">🚫</span>
+              <div>
+                <h2 className="text-base font-black text-red-800 mb-1">
+                  Socio inhabilitado para cargarle ventas
+                </h2>
+                <p className="text-sm text-red-700 font-medium leading-relaxed">
+                  Ya llegaste al tope de descuento de <strong>{formatMoney(socio.bloqueo_24h.tope)}</strong> para este socio dentro de las 24 hs posteriores al depósito.
+                </p>
+                {socio.bloqueo_24h.hasta_texto && (
+                  <p className="text-xs font-bold text-red-800 bg-white/80 border border-red-200 rounded-xl px-3 py-2 mt-3 inline-block">
+                    🕒 Se rehabilita automáticamente el {socio.bloqueo_24h.hasta_texto} hs (o si el socio pide habilitación en el sindicato).
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -179,7 +207,7 @@ export default function PrestadorCobrar() {
         )}
 
         {/* Step 2: Amount */}
-        {socio && (
+        {socio && !socio.bloqueo_24h?.inhabilitado && (
           <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
             <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center">2</span>
